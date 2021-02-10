@@ -1,0 +1,2680 @@
+<!DOCTYPE html>
+<html>
+
+  <head>
+	<meta name="generator" content="Hugo 0.53" />
+
+  <title>
+      
+      Matt Roll
+      
+  </title>
+
+</head>
+
+
+  <body>
+
+    
+
+	
+<div class="h-feed">
+
+	
+	
+      <div class="h-entry">
+		
+			<h1><a href="https://matthewroll.com/2021/01/23/the-missing-piece.html">The Missing Piece to helm-projectile</a></h1>
+		
+
+        <a href="https://matthewroll.com/2021/01/23/the-missing-piece.html" class="u-url"><time class="dt-published" datetime="2021-01-23 00:00:00 -0800">Jan 23, 2021</time></a>
+
+        <div class="e-content">
+         	<p>Obviously you should be able to start a search by choosing a directory in the current project and then doing a recursive grep from there.</p>
+
+<p>But for some reason that&rsquo;s not built into helm-projectile or helm-rg, my preferred search interface.</p>
+
+<p>So after like several months of living with this hole in my life, I took an hour and wrote it. I didn&rsquo;t know it would only take an hour, of course, otherwise I probably would have done it sooner. I haven&rsquo;t written much emacs lisp, so I figured it could be a little bit of a struggle. But in the end it wasn&rsquo;t too hard to find the functions I needed by reading the helm-rg code and the projectile code. Especially since helm-rg has a function called <code>helm-rg--set-dir</code> which does <em>mostly</em> the same thing, except the interface is not as smooth as I would like.</p>
+
+<p>The interface I would <em>like</em> is this:</p>
+
+<ul>
+<li>Start a projectile folder search through the current project w/ a super convenient keybinding. Maybe <code>SPC d /</code>.</li>
+<li>Find the folder you want to treat as the root of your search. The important part here is that it&rsquo;s a fuzzy search. You should only need to type enough characters to select the folder you&rsquo;re looking for from all the rest.</li>
+<li>Select the folder. This will start a string search using whatever tool you have set up to do your grepping (like I said, I like to use <code>helm-rg</code> cuz it&rsquo;s super fast).</li>
+</ul>
+
+<p>Looking through the <code>projectile.el</code> source code, I found two functions that do all the heavy lifting for this feature: <code>projectile-complete-dir</code> and <code>projectile-acquire-root.</code></p>
+
+<p><code>projectile-complete-dir</code> takes a directory as its only argument and presents you with a helm popup where you can use fuzzy search to select a folder below that directory. This is what we use to quickly pick the search root.</p>
+
+<p><code>projectile-acquire-root</code> takes no arguments, and uses the current buffer to find the project root. You just call it from wherever you are and it finds the nearest ancestor directory that has a <code>.git</code> file.</p>
+
+<p>By combining these two it was pretty easy to write a function that runs my desired behavior.</p>
+
+<pre><code class=“lang-lisp”>
+(defun mpr/helm-rg-from-dir ()
+    (interactive)
+    (let ((helm-rg--current-dir
+              (expand-file-name
+                (projectile-complete-dir (projectile-acquire-root))
+                (projectile-acquire-root))))
+      (helm-rg helm-pattern)))
+</code></pre>
+
+<p>And then I bound it to the convenient <code>SPC d /</code> like I mentioned above.</p>
+
+<pre><code class=“lang-lisp”>
+(evil-define-key 'normal (kbd "SPC d /") 'mpr/helm-rg-from-dir)
+</code></pre>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+
+        <a href="https://matthewroll.com/2021/01/21/aaaaaaaand-were-back.html" class="u-url"><time class="dt-published" datetime="2021-01-21 16:09:55 -0800">Jan 21, 2021</time></a>
+
+        <div class="e-content">
+         	<p>Aaaaaaaand we’re back <a href="https://astralcodexten.substack.com/">astralcodexten.substack.com</a> 📖</p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+			<h1><a href="https://matthewroll.com/2021/01/18/how-to-override.html">How to Override evil-collection Keybindings</a></h1>
+		
+
+        <a href="https://matthewroll.com/2021/01/18/how-to-override.html" class="u-url"><time class="dt-published" datetime="2021-01-18 15:10:00 -0800">Jan 18, 2021</time></a>
+
+        <div class="e-content">
+         	
+
+<p>Having spent at least an hour over the past couple days figuring out how to do this, I thought it would be worth putting up a clear explanation for future googlers of said question. It&rsquo;s currently possible to find out how to do this via google, but the answer is at the bottom of a thread on a <a href="https://github.com/emacs-evil/evil-collection/issues/214">GitHub issue</a> and I feel like it would be nice for the top result to just straight up ask and answer the question.</p>
+
+<h2 id="the-problem">The Problem</h2>
+
+<p>For each mode specified in <code>evil-collection-mode-list</code>, evil-collection adds a <code>with-eval-after-load</code> call to bind the vim-like keys you love so much for that mode. The way <code>with-eval-after-load</code> works, perhaps unsurprisingly, is it runs code to define those keybindings <em>after</em> you open a buffer which has a mode included in evil-collection&rsquo;s mode list. Which means any keys you define for that mode inside your config file will get overriden by keys defined by evil-collection.</p>
+
+<h2 id="the-solution">The Solution</h2>
+
+<p>Fortunately evil-collection provides a hook that we can piggy-back on to define our own bindings after evil-collection defines its bindings. The hook is called <code>evil-collection-setup-hook</code>, and can be used like this, for instance, to add a binding to prodigy-view-mode:</p>
+
+<pre><code class="language-lisp">
+(defun my-prodigy-view-mode-keys (&rest a)
+  (evil-define-key 'normal prodigy-view-mode-map (kbd "q") 'quit-window))
+
+(add-hook 'evil-collection-setup-hook 'my-prodigy-view-mode-keys)
+</code></pre>
+
+<p>And if you are using <a href="https://jwiegley.github.io/use-package/">use-package</a>, you can take advantage of some nice syntactic sugar, like this</p>
+
+<pre><code class="language-lisp">
+(use-package prodigy
+  :hook (evil-collection-setup . (lambda (&rest a)
+                   (evil-define-key 'normal prodigy-view-mode-map (kbd "q") 'quit-window)))
+  ;; other config
+)
+</code></pre>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+			<h1><a href="https://matthewroll.com/2021/01/17/how-to-compile.html">How to compile Emacs feature/native-comp on macos</a></h1>
+		
+
+        <a href="https://matthewroll.com/2021/01/17/how-to-compile.html" class="u-url"><time class="dt-published" datetime="2021-01-17 12:32:15 -0800">Jan 17, 2021</time></a>
+
+        <div class="e-content">
+         	
+
+<p>I was finally successful in compiling and running the <a href="https://github.com/emacs-mirror/emacs/tree/feature/native-comp">feature/native-comp</a> build of Emacs! This was my second try, after having failed the first time several months ago. This new build promises huge performance improvements which I&rsquo;m very much looking forward to enjoying in my day-to-day use of the best editor on the planet :)</p>
+
+<p>Since it took me two tries and several hours of hacking to get this working, I figured it would be useful to write down the winning recipe for others so they might have an easier time of it. The process is not complicated or very long, but there are a couple steps that are not obvious in the documentation I&rsquo;ve seen, and a couple hangups you might run into that prove difficult to resolve.</p>
+
+<p>I&rsquo;m running macOS Big Sur.</p>
+
+<h2 id="build">Build</h2>
+
+<ul>
+<li>1. Clone <a href="https://github.com/jimeh/build-emacs-for-macos">build-emacs-for-macos</a></li>
+<li>2. <code>cd</code> to that directory</li>
+<li>3. Run <code>brew bundle</code></li>
+<li>4. Check that you have Ruby version at least 2.3 by running <code>ruby --version</code></li>
+<li>5. Run <code>./build-emacs-for-macos feature/native-comp</code></li>
+</ul>
+
+<h2 id="run">Run</h2>
+
+<ul>
+<li>In your emacs configuration file, <code>init.el</code> or other, put <code>(setq comp-speed 2)</code> somewhere near the top.</li>
+<li>In the <code>build-emacs-for-macos</code> directory there will be a folder called <code>builds</code>. In that folder there will be a single <code>.tbz</code> file. Open the Finder and double click on that file to unzip it. It will unzip to a new Emacs application in the same folder.</li>
+<li>Double click the new Emacs application to run it.</li>
+<li>On first startup, Emacs will compile to native code elisp files for builtin packages and packages that get loaded by your configuration. You can see the progress by switching to the <code>*Async-native-compile-log*</code> buffer.</li>
+</ul>
+
+<h2 id="notes">Notes</h2>
+
+<ul>
+<li>Since the feature/native-comp branch builds Emacs at version 28, there may be some breaking changes that will require some updates to your config. For example I ran into a problem caused by a change in the API signature of some macros. The version of <code>evil-mode</code> that I was using was slightly out of date and so I had to pull the most recent updates before Emacs would start successfully.</li>
+</ul>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+
+        <a href="https://matthewroll.com/2021/01/16/i-started-a.html" class="u-url"><time class="dt-published" datetime="2021-01-16 23:14:38 -0800">Jan 16, 2021</time></a>
+
+        <div class="e-content">
+         	<p>I started a <a href="https://matthewroll.com/links/">Links page</a> where I&rsquo;m collecting things I found online that have shaped who I am.</p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+
+        <a href="https://matthewroll.com/2021/01/16/htop-while-compiling.html" class="u-url"><time class="dt-published" datetime="2021-01-16 15:40:00 -0800">Jan 16, 2021</time></a>
+
+        <div class="e-content">
+         	<p>htop while compiling emacs feature/native-comp</p>
+
+<p><img src="uploads/2021/5f609509d1.jpg" width="600" height="800" alt="" /></p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+
+        <a href="https://matthewroll.com/2021/01/12/everything-else-will.html" class="u-url"><time class="dt-published" datetime="2021-01-12 22:52:23 -0800">Jan 12, 2021</time></a>
+
+        <div class="e-content">
+         	<p>Everything else will fade but I’ll remember that 2020 was the year the New York Times killed Slate Star Codex and it will still be the worst year on record.</p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+			<h1><a href="https://matthewroll.com/2021/01/11/emacs-status-update.html">Emacs Status Update</a></h1>
+		
+
+        <a href="https://matthewroll.com/2021/01/11/emacs-status-update.html" class="u-url"><time class="dt-published" datetime="2021-01-11 19:28:00 -0800">Jan 11, 2021</time></a>
+
+        <div class="e-content">
+         	<p><strong>tl;dr:</strong> I decided to exit pre-built Emacs configuration packages and build my own config from scratch. See the whole thing at the bottom of this post.</p>
+
+<hr />
+
+<p>Last time I wrote about Emacs it was about how to set up JavaScript editing tools in Doom Emacs. I had switched to Doom Emacs because I was having significant performance problems with Spacemacs, and Doom advertised a bunch of performance optimizations. It turns out I was just doing something stupid with Spacemacs, probably like not restarting it for months or letting some configuration bloat build up. So I ended up switching back because I prefer the Spacemacs defaults to Doom. And the performance problems went away.</p>
+
+<p>But I still was not able to get the editing tools working that I wanted to use when writing JavaScript. Specifically I want to have</p>
+
+<ul>
+<li>Automatic linting</li>
+<li>Automatic formatting</li>
+<li>Autocompletion with language and type support</li>
+</ul>
+
+<p>Which means I need to have three plugins working together. Those being</p>
+
+<ol>
+<li>flycheck</li>
+<li>prettier-js</li>
+<li>lsp-mode</li>
+</ol>
+
+<p>This is one of those things that should be really easy to get working. Writing JavaScript is something so many people need to do that it should be possible to set up a good environment in just a few lines of code, and there should be high quality guides all over the internet explaining how to do it. Maybe Emacs is just not a popular enough editor. Anyway I was surprised at how difficult it is to get working in Spacemacs.</p>
+
+<p>I finally almost got something working by configuring my layers like this</p>
+
+<pre><code class="scheme">
+syntax-checking
+(auto-completion :variables
+                 auto-completion-enable-snippets-in-popup t
+                 :disabled-for org git)
+lsp
+(javascript :variables 
+            node-add-modules-path t
+            javascript-backend 'lsp
+            javascript-lsp-linter nil)
+</code></pre>
+
+<p>And there are a couple other pieces of the configuration like</p>
+
+<ol>
+<li>Installing the <code>add-node-modules-path</code> package</li>
+<li>Installing the <code>typescript-language-server</code> via npm</li>
+<li>Installing <code>eslint</code> via npm</li>
+</ol>
+
+<p>But even then, when I open a <code>.jsx</code> file, Emacs fails to find my <code>eslint</code> executable. And I just couldn&rsquo;t get <code>exec-path-from-shell</code> working to fix that.</p>
+
+<p>I got fed up and I figured that the source of my frustration is how many abstractions and layers of code there are between me and the actual packages when using Spacemacs.</p>
+
+<p>So I decided to build my config from scratch. Which is something that I had avoided until now. I really liked Spacemacs. It came batteries included, and I really like those batteries. I also <em>love</em> the ergonomic keybindings. Using <code>SPC</code> as the leader key and having the helpful hydra there to make everything super discoverable was a massive jump in Emacs sophistication that I didn&rsquo;t even know existed before I found Spacemacs. That was almost four years ago, and now I&rsquo;m a much more experienced Emacs user. I feel like I know what the landscape of popular packages looks like, and I&rsquo;ve put in a decent amount of time writing my own elisp. So three days ago when I felt like the batteries-included approach of Spacemacs was hindering my ability to understand and have control over my configuration, I decided it was the right time to build my own configuration.</p>
+
+<p>I had been seeing the <a href="https://github.com/raxod502/straight.el">straight.el</a> package manager being used by <a href="https://blog.jethro.dev/">some people</a> who I consider pretty hardcore Emacs users, so that was where I decided to start my custom configuration.</p>
+
+<p>Turns out building a configuration with straight.el is suuuuuper easy. Just pop this code at the top of your <code>init.el</code>.</p>
+
+<pre><code class="scheme">
+(defvar bootstrap-version)
+(let ((bootstrap-file
+       (expand-file-name "straight/repos/straight.el/bootstrap.el" user-emacs-directory))
+      (bootstrap-version 5))
+  (unless (file-exists-p bootstrap-file)
+    (with-current-buffer
+    (url-retrieve-synchronously
+     "[raw.githubusercontent.com/raxod502/...](https://raw.githubusercontent.com/raxod502/straight.el/develop/install.el)"
+     'silent 'inhibit-cookies)
+      (goto-char (point-max))
+      (eval-print-last-sexp)))
+  (load bootstrap-file nil 'nomessage))
+
+(straight-use-package 'use-package)
+</code></pre>
+
+<p>Now you have the full power of the beautiful <a href="https://github.com/jwiegley/use-package">use-package</a> configuration interface at your fingertips. On average I&rsquo;m able to install and configure each package I enjoyed having in Spacemacs in less than five lines. Here&rsquo;s an example of how I install and configure <a href="https://github.com/emacs-helm/helm">helm</a>.</p>
+
+<pre><code class="lisp">
+(use-package helm
+  :straight t
+  :config
+  (helm-mode 1)
+
+  ;; For navigating in helm popups
+  (define-key helm-map (kbd "C-j") 'helm-next-line)
+  (define-key helm-map (kbd "C-k") 'helm-previous-line))
+</code></pre>
+
+<p>I went through all the functionality I had come to expect from Spacemacs and just installed the packages directly. Here&rsquo;s a list of everything I&rsquo;m currently using.</p>
+
+<ul>
+<li><a href="https://github.com/codesuki/add-node-modules-path">add-node-modules-path</a></li>
+<li><a href="https://github.com/domtronn/all-the-icons.el">all-the-icons</a></li>
+<li><a href="https://github.com/justbur/emacs-bind-map">bind-map</a></li>
+<li><a href="https://company-mode.github.io/">company</a></li>
+<li><a href="https://github.com/seagle0128/doom-modeline">doom-modeline</a></li>
+<li><a href="https://github.com/hlissner/emacs-doom-themes">doom-themes</a></li>
+<li><a href="https://github.com/emacs-evil/evil">evil</a></li>
+<li><a href="https://github.com/emacs-evil/evil-collection">evil-collection</a></li>
+<li><a href="https://github.com/syl20bnr/evil-escape">evil-escape</a></li>
+<li><a href="https://github.com/cofi/evil-leader">evil-leader</a></li>
+<li><a href="https://github.com/purcell/exec-path-from-shell">exec-path-from-shell</a></li>
+<li><a href="https://www.flycheck.org/en/latest/">flycheck</a></li>
+<li><a href="https://emacs-helm.github.io/helm/">helm</a></li>
+<li><a href="https://github.com/bbatsov/helm-projectile">helm-projectile</a></li>
+<li><a href="https://github.com/cosmicexplorer/helm-rg">helm-rg</a></li>
+<li><a href="https://github.com/emacsorphanage/helm-swoop">helm-swoop</a></li>
+<li><a href="https://github.com/mooz/js2-mode">js2-mode</a></li>
+<li><a href="https://github.com/emacs-lsp/lsp-mode">lsp-mode</a></li>
+<li><a href="https://magit.vc/">magit</a></li>
+<li><a href="https://orgmode.org/">org</a></li>
+<li><a href="https://github.com/sabof/org-bullets">org-bullets</a></li>
+<li><a href="https://github.com/org-roam/org-roam">org-roam</a></li>
+<li><a href="https://melpa.org/#/org-variable-pitch">org-variable-pitch</a></li>
+<li><a href="https://github.com/kunalb/poet">poet-theme</a></li>
+<li><a href="https://github.com/emacsorphanage/popwin">popwin</a></li>
+<li><a href="https://github.com/prettier/prettier-emacs">prettier-js</a></li>
+<li><a href="https://github.com/bbatsov/projectile">projectile</a></li>
+<li><a href="https://github.com/iqbalansari/restart-emacs">restart-emacs</a></li>
+<li><a href="https://github.com/felipeochoa/rjsx-mode">rjsx-mode</a></li>
+<li><a href="https://github.com/hvesalai/emacs-scala-mode">scala-mode</a></li>
+<li><a href="https://github.com/owainlewis/emacs-color-themes">sublime-themes</a></li>
+<li><a href="https://elpa.gnu.org/packages/undo-tree.html">undo-tree</a></li>
+<li><a href="https://web-mode.org/">web-mode</a></li>
+</ul>
+
+<p>Like I mentioned above, one of my favorite things about Spacemacs is the ergonomic, intuitive, modal keybindings. It took me a few minutes to figure out how to configure that for myself, but I eventually found a mention of <code>bind-map</code> in Spacemacs documentation.</p>
+
+<p><code>bind-map</code> works by taking pairs of <code>(key sequence, command)</code> and binding the command to the key sequence. You can make these bindings specific to any key map — I have a few bindings that are only active when you are in a helm popup.</p>
+
+<p>Not all of my custom keybindings are registered using <code>bind-map</code>, I have a few that I register in the <code>use-package</code> blocks under the <code>:config</code> section. I have a feeling I&rsquo;ll want to consolidate all keybindings at some point, but for now this is working.</p>
+
+<p>I use the <code>bind-map</code> interface to define all key sequences that follow the <code>SPC</code> leader key. Here is my whole <code>bind-map</code> block:</p>
+
+<pre><code class="lisp">
+(use-package bind-map
+  :straight t
+  :config
+  (bind-map my-base-leader-map
+    :keys ("M-m")
+    :evil-keys ("SPC")
+    :evil-states (normal motion visual))
+
+  (bind-map-set-keys my-base-leader-map
+    ;; M-x
+    "SPC" 'helm-M-x
+    
+    ;; File commands
+    "ff" 'helm-find-files
+    "fs" 'save-buffer
+    "feR" 'reload-config
+    "fed" 'open-config-file
+    "fj"  'dired-this-buffer
+
+    ;; Window commands
+    "wm" 'delete-other-windows
+    "wd" 'delete-window
+    "ws" 'split-window-below
+    "wv" 'split-window-right
+    "wl" 'windmove-right
+    "wh" 'windmove-left
+    "wk" 'windmove-up
+    "wj" 'windmove-down
+    "wF" 'make-frame
+    "wo" 'other-frame
+
+    ;; Buffer commands
+    "TAB" 'switch-to-last-buffer
+    "bb"  'helm-buffers-list
+    "bd"  'kill-this-buffer
+    "ss"  'helm-swoop
+    "br"  'revert-buffer
+
+    ;; Frame commands
+    "tF" 'toggle-frame-fullscreen
+
+    ;; Project commands
+    "gs"  'magit-status
+    "pf"  'projectile-find-file
+    "pp"  'projectile-switch-project
+    "/"   'helm-projectile-rg
+
+    ;; Syntax commands
+    "el" 'flycheck-list-errors
+
+    ;; Help
+    "hk" 'describe-key
+    "hf" 'describe-function
+    "hv" 'describe-variable
+    "hm" 'describe-mode
+
+    ;; Emacs
+    "qr" 'restart-emacs
+    )
+
+  (bind-map-set-keys helm-find-files-map
+    "C-h" 'helm-find-files-up-one-level
+    "C-l" 'helm-execute-persistent-action
+    "TAB" 'helm-execute-persistent-action
+    "C-j" 'helm-next-line
+    "C-k" 'helm-previous-line)
+
+  )
+</code></pre>
+
+<p>The hydra package was something I seriously considered putting in my config, but eventually decided I don’t need it. It’s one of my favorite features of Spacemacs because it makes it possible for a beginner to discover lots of functionality just by looking around. The thing is I’m not a beginner anymore and I don’t need an interface that I’ve designed and only I use to be discoverable. As of this writing I have all my keybindings memorized, and since I use them all so often, I’m not at risk of forgetting anything. For those reasons plus the effort it would take to design my own hydra menus, I’ve decided to leave that package out of my config for now.</p>
+
+<p>I guess I should mention that I figured out how to get all of my JavaScript editing tools working! Because of course it&rsquo;s not actually that complicated. But since I had such a hard time of it, I&rsquo;ll post a standalone tutorial in the next week or so.</p>
+
+<p>And that&rsquo;s the lowdown on my new Emacs config 🙂 There are a few workflow type things that I haven&rsquo;t included here like how I use org mode and how I version control my configuration (spoiler: <a href="https://www.gnu.org/software/stow/manual/stow.html">GNU stow</a>), but I feel like those are worth their own posts.</p>
+
+<p>Here&rsquo;s the current state of my new config.</p>
+
+<pre>
+<code class="lisp">
+;;; package --- matt's emacs config
+
+;;; Commentary:
+;;
+
+;;; Code:
+
+(defvar bootstrap-version)
+(let ((bootstrap-file
+       (expand-file-name "straight/repos/straight.el/bootstrap.el" user-emacs-directory))
+      (bootstrap-version 5))
+  (unless (file-exists-p bootstrap-file)
+    (with-current-buffer
+    (url-retrieve-synchronously
+     "[raw.githubusercontent.com/raxod502/...](https://raw.githubusercontent.com/raxod502/straight.el/develop/install.el)"
+     'silent 'inhibit-cookies)
+      (goto-char (point-max))
+      (eval-print-last-sexp)))
+  (load bootstrap-file nil 'nomessage))
+
+(straight-use-package 'use-package)
+
+;; Packages
+;; ------------------------
+
+(use-package add-node-modules-path
+  :straight t
+  :hook (rjsx-mode . add-node-modules-path))
+
+(use-package all-the-icons
+  :straight t)
+
+(use-package bind-map
+  :straight t
+  :after helm helm-rg helm-swoop helm-projectile
+  :config
+  (bind-map my-base-leader-map
+    :keys ("M-m")
+    :evil-keys ("SPC")
+    :evil-states (normal motion visual))
+
+  (bind-map-set-keys my-base-leader-map
+    ;; M-x
+    "SPC" 'helm-M-x
+    
+    ;; File commands
+    "ff" 'helm-find-files
+    "fs" 'save-buffer
+    "feR" 'reload-config
+    "fed" 'open-config-file
+    "fj"  'dired-this-buffer
+
+    ;; Window commands
+    "wm" 'delete-other-windows
+    "wd" 'delete-window
+    "ws" 'split-window-below
+    "wv" 'split-window-right
+    "wl" 'windmove-right
+    "wh" 'windmove-left
+    "wk" 'windmove-up
+    "wj" 'windmove-down
+    "wF" 'make-frame
+    "wo" 'other-frame
+
+    ;; Buffer commands
+    "TAB" 'switch-to-last-buffer
+    "bb"  'helm-buffers-list
+    "bd"  'kill-this-buffer
+    "ss"  'helm-swoop
+    "br"  'revert-buffer
+
+    ;; Frame commands
+    "tF" 'toggle-frame-fullscreen
+
+    ;; Project commands
+    "gs"  'magit-status
+    "pf"  'projectile-find-file
+    "pp"  'projectile-switch-project
+    "/"   'helm-projectile-rg
+
+    ;; Syntax commands
+    "el" 'flycheck-list-errors
+
+    ;; Help
+    "hk" 'describe-key
+    "hf" 'describe-function
+    "hv" 'describe-variable
+    "hm" 'describe-mode
+
+    ;; Emacs
+    "qr" 'restart-emacs
+    )
+
+  (bind-map-set-keys helm-find-files-map
+    "C-h" 'helm-find-files-up-one-level
+    "C-l" 'helm-execute-persistent-action
+    "TAB" 'helm-execute-persistent-action
+    "C-j" 'helm-next-line
+    "C-k" 'helm-previous-line))
+
+(use-package company
+  :straight t
+  :init
+  (global-company-mode)
+  (setq company-tooltip-align-annotations t))
+
+(use-package doom-modeline
+  :straight t
+  :init (doom-modeline-mode 1))
+
+(use-package doom-themes
+  :straight t
+  :config
+  ;; Global settings (defaults)
+  (setq doom-themes-enable-bold t    ; if nil, bold is universally disabled
+        doom-themes-enable-italic t) ; if nil, italics is universally disabled
+
+    ;; Corrects (and improves) org-mode's native fontification.
+  (doom-themes-org-config))
+
+(use-package evil
+  :straight t
+  :init
+  (setq evil-want-keybinding nil)
+  :config
+  (evil-mode 1))
+
+(use-package evil-collection
+  :after evil
+  :straight t
+  :config
+  (evil-collection-init))
+
+(use-package evil-escape
+  :straight t
+  :config
+  (evil-escape-mode)
+  (setq-default evil-escape-key-sequence "kj"))
+
+(use-package evil-leader
+  :straight t
+  :config
+  (global-evil-leader-mode)
+  (evil-leader/set-leader "<SPC>")
+
+  (define-key evil-normal-state-map (kbd "C-u") 'scroll-down-half-page)
+  (define-key evil-normal-state-map (kbd "C-d") 'scroll-up-half-page))
+
+(use-package exec-path-from-shell
+  :straight t
+  :config
+  (exec-path-from-shell-initialize))
+
+(use-package flycheck
+  :straight t
+  :init
+  (global-flycheck-mode))
+
+(use-package helm
+  :straight t
+  :config
+  (helm-mode 1)
+
+  (define-key helm-map (kbd "C-j") 'helm-next-line)
+  (define-key helm-map (kbd "C-k") 'helm-previous-line)
+
+  (setq helm-split-window-in-side-p t))
+
+(use-package helm-projectile
+  :straight t
+  :config
+  (helm-projectile-on)
+
+  (setq projectile-globally-ignored-directories '("node_modules"
+                          "target")))
+
+(use-package helm-rg
+  :straight t)
+
+(use-package helm-swoop
+  :straight t)
+
+(use-package js2-mode
+  :straight t
+  :mode "\\.js\\'"
+  :config
+  (setq js2-mode-show-parse-errors nil)
+  (setq js2-mode-show-strict-warnings nil))
+
+(use-package lsp-mode
+  :straight t
+  :hook
+  (js2-mode . lsp)
+  (rjsx-mode . lsp)
+  :config
+  (setq lsp-headerline-breadcrumb-enable nil))
+
+(use-package magit
+  :straight t)
+
+(use-package org
+  :straight t
+  :config
+  (setq org-agenda-files '("~/Dropbox/org/"))
+  (setq org-hide-emphasis-markers t)
+  (setq org-use-speed-commands t)
+  ;; (setq org-use-fast-todo-selection t)
+  (setq org-directory "~/org")
+  (setq org-default-notes-file "~/org/refile.org")
+
+  (set-face-attribute 'variable-pitch nil :family "ETBembo" :height 160)
+
+  ;; Show lot of clocking history so it's easy to pick items off the C-F11 list
+  (setq org-clock-history-length 23)
+  ;; Resume clocking task on clock-in if the clock is open
+  (setq org-clock-in-resume t)
+
+  (setq org-clock-out-remove-zero-time-clocks t)
+
+  (setq org-clock-out-when-done t)
+  ;; Save the running clock and all clock history when exiting Emacs, load it on startup
+  (setq org-clock-persist t)
+  ;; Do not prompt to resume an active clock
+  (setq org-clock-persist-query-resume nil)
+  ;; Enable auto clock resolution for finding open clocks
+  (setq org-clock-auto-clock-resolution (quote when-no-clock-is-running))
+  ;; Include current clocking task in clock reports
+  (setq org-clock-report-include-clocking-task t)
+
+  (setq org-clock-idle-time 5)
+
+  (setq org-enforce-todo-dependencies t)
+
+  (setq org-hide-leading-stars t)
+
+  (org-indent-mode -1)
+  (setq org-startup-indented nil)
+
+  (setq org-cycle-separator-lines 0)
+
+  (setq org-blank-before-new-entry (quote ((heading)
+                       (plain-list-item . auto))))
+
+  (setq org-insert-heading-respect-content t)
+
+  (setq org-reverse-note-order nil)
+
+  (setq org-show-following-heading t)
+  (setq org-show-hierarchy-above t)
+  (setq org-show-siblings (quote ((default))))
+
+  (setq org-log-done (quote time))
+  (setq org-log-into-drawer t)
+  (setq org-log-state-notes-insert-after-drawers nil)
+
+  (setq org-todo-keywords
+    (quote ((sequence "TODO(t)" "IN-PROGRESS(i)" "|" "DONE(d)")
+        (sequence "HOLD(h)"))))
+
+  (org-clock-persistence-insinuate)
+
+  (add-hook 'org-mode-hook 'turn-on-auto-fill)
+
+  (defun mr/org-confirm-babel-evaluate (lang body)
+    (not (or (string= lang "latex")
+         (string= lang "tcl")
+         (string= lang "bash")
+         (string= lang "ledger")
+         (string= lang "python")
+         (string= lang "emacs-lisp")
+         (string= lang "shell")
+         (string= lang "lisp"))))
+  (setq-default org-confirm-babel-evaluate 'mr/org-confirm-babel-evaluate)
+
+  (org-babel-do-load-languages
+   'org-babel-load-languages
+   '((R . t)
+     (ditaa . nil)
+     (dot . nil)
+     (emacs-lisp . t)
+     (gnuplot . t)
+     (haskell . t)
+     (latex . t)
+     (ledger . t)
+     (ocaml . nil)
+     (octave . nil)
+     (python . t)
+     (ruby . nil)
+     (screen . nil)
+     (shell . t)
+     (sql . nil)
+     (sqlite . nil)))
+
+  (evil-define-key 'normal org-mode-map "t" 'org-todo)
+
+  (evil-define-key 'normal org-mode-map (kbd "SPC h i") 'org-insert-heading)
+  (evil-define-key 'normal org-mode-map (kbd "SPC h s") 'org-insert-subheading)
+
+  (evil-define-key 'normal org-mode-map (kbd ">") 'org-demote-subtree)
+  (evil-define-key 'normal org-mode-map (kbd "<") 'org-promote-subtree)
+
+  (evil-define-key 'normal org-mode-map (kbd ", I") 'org-clock-in)
+  (evil-define-key 'normal org-mode-map (kbd ", O") 'org-clock-out))
+
+(use-package org-bullets
+  :straight t
+  :config
+  (add-hook 'org-mode-hook (lambda () (org-bullets-mode 1))))
+
+(use-package org-roam
+      :straight t
+      :ensure t
+      :hook
+      (after-init . org-roam-mode)
+      :custom
+      (org-roam-directory "~/Dropbox/org/notes")
+      :bind (:map org-roam-mode-map
+              (("C-c n l" . org-roam)
+               ("C-c n f" . org-roam-find-file)
+               ("C-c n g" . org-roam-graph))
+              :map org-mode-map
+              (("C-c n i" . org-roam-insert))
+              (("C-c n I" . org-roam-insert-immediate))))
+
+(use-package org-variable-pitch
+  :straight t
+  :config
+  (add-hook 'org-mode-hook 'org-variable-pitch-minor-mode))
+
+(use-package poet-theme
+  :straight t
+  :config
+  (add-hook 'text-mode-hook
+        (lambda ()
+          (variable-pitch-mode 1))))
+
+(use-package popwin
+  :straight t
+  :config
+  (popwin-mode 1))
+
+(use-package prettier-js
+  :straight t
+  :config
+  (add-hook 'js2-mode-hook 'prettier-js-mode)
+  (add-hook 'rjsx-mode-hook 'prettier-js-mode))
+
+(use-package projectile
+  :straight t
+  :config
+  (projectile-mode +1))
+
+(use-package restart-emacs
+  :straight t)
+
+(use-package rjsx-mode
+  :straight t
+  :mode "\\.jsx\\'")
+
+(use-package scala-mode
+  :straight t
+  :interpreter
+  ("scala" . scala-mode))
+
+(use-package sublime-themes
+  :straight t
+  :config
+  (add-to-list 'custom-theme-load-path "~/.emacs.d/themes"))
+
+;; this is cute but it gets in the way of minibuffer messages
+;; (use-package symon
+;;   :straight t
+;;   :config
+;;   (symon-mode))
+
+(use-package undo-tree
+  :straight t
+  :config
+  (global-undo-tree-mode)
+  (evil-set-undo-system 'undo-tree))
+
+(use-package web-mode
+  :straight t
+  :config
+  (add-to-list 'auto-mode-alist '("\\.html?\\'" . web-mode))
+
+  (defun my-web-mode-hook ()
+    "Hooks for Web mode."
+    (setq web-mode-markup-indent-offset 2)
+    (setq web-mode-code-indent-offset 2)
+    (setq web-mode-css-indent-offset 2))
+  (add-hook 'web-mode-hook  'my-web-mode-hook))
+
+;; Functions
+;; ------------------------
+
+(defun open-config-file ()
+  (interactive)
+  (find-file "~/.emacs.d/.emacs.el"))
+
+(defun reload-config ()
+  (interactive)
+  (load-file "~/.emacs.d/init.el"))
+
+(defun dired-this-buffer ()
+  (interactive)
+  (find-file default-directory))
+
+(defun switch-to-last-buffer ()
+  (interactive)
+  (switch-to-buffer nil))
+
+(defun scroll-up-half-page ()
+  (interactive)
+  (scroll-up-command
+   (truncate (/ (window-total-height) 2))))
+
+(defun scroll-down-half-page ()
+  (interactive)
+  (scroll-down-command
+   (truncate (/ (window-total-height) 2))))
+
+(defun rename-file-and-buffer (new-name)
+  "Renames both current buffer and file it's visiting to NEW-NAME."
+  (interactive "sNew name: ")
+  (let ((name (buffer-name))
+        (filename (buffer-file-name)))
+    (if (not filename)
+        (message "Buffer '%s' is not visiting a file!" name)
+      (if (get-buffer new-name)
+          (message "A buffer named '%s' already exists!" new-name)
+        (progn
+          (rename-file filename new-name 1)
+          (rename-buffer new-name)
+          (set-visited-file-name new-name)
+          (set-buffer-modified-p nil))))))
+
+(defun wc (&optional start end)
+  "Prints number of lines, words and characters in region or whole buffer."
+  (interactive)
+  (let ((n 0)
+        (start (if mark-active (region-beginning) (point-min)))
+        (end (if mark-active (region-end) (point-max))))
+    (save-excursion
+      (goto-char start)
+      (while (< (point) end) (if (forward-word 1) (setq n (1+ n)))))
+    (message "%3d %3d %3d" (count-lines start end) n (- end start))))
+
+;; Hooks
+;; ------------------------
+
+(add-hook 'text-mode-hook 'turn-on-auto-fill)
+
+;; Variables/Modes
+;; ------------------------
+
+(scroll-bar-mode -1)
+(menu-bar-mode   -1)
+(tool-bar-mode   -1)
+
+(setq backup-directory-alist '(("." . "~/.emacs.d/.backups/")))
+
+(setq vc-follow-symlinks t)
+
+(when window-system
+  (set-frame-size (selected-frame) 100 75))
+
+(add-to-list
+ 'default-frame-alist'(ns-transparent-titlebar . t))
+(add-to-list
+ 'default-frame-alist'(ns-appearance . light))
+
+(load-theme 'doom-acario-light)
+
+;; Custom
+;; -----------------------
+(custom-set-variables
+ ;; custom-set-variables was added by Custom.
+ ;; If you edit it by hand, you could mess it up, so be careful.
+ ;; Your init file should contain only one such instance.
+ ;; If there is more than one, they won't work right.
+ '(custom-safe-themes
+   '("01cf34eca93938925143f402c2e6141f03abb341f27d1c2dba3d50af9357ce70" "54cf3f8314ce89c4d7e20ae52f7ff0739efb458f4326a2ca075bf34bc0b4f499" "3c2f28c6ba2ad7373ea4c43f28fcf2eed14818ec9f0659b1c97d4e89c99e091e" "aaa4c36ce00e572784d424554dcc9641c82d1155370770e231e10c649b59a074" "730a87ed3dc2bf318f3ea3626ce21fb054cd3a1471dcd59c81a4071df02cb601" "5036346b7b232c57f76e8fb72a9c0558174f87760113546d3a9838130f1cdb74" "6084dce7da6b7447dcb9f93a981284dc823bab54f801ebf8a8e362a5332d2753" "188fed85e53a774ae62e09ec95d58bb8f54932b3fd77223101d036e3564f9206" "c4bdbbd52c8e07112d1bfd00fee22bf0f25e727e95623ecb20c4fa098b74c1bd" "f2927d7d87e8207fa9a0a003c0f222d45c948845de162c885bf6ad2a255babfd" "d5a878172795c45441efcd84b20a14f553e7e96366a163f742b95d65a3f55d71" "3cd28471e80be3bd2657ca3f03fbb2884ab669662271794360866ab60b6cb6e6" "e6ff132edb1bfa0645e2ba032c44ce94a3bd3c15e3929cdf6c049802cf059a2a" "35c096aa0975d104688a9e59e28860f5af6bb4459fd692ed47557727848e6dfe" "f490984d405f1a97418a92f478218b8e4bcc188cf353e5dd5d5acd2f8efd0790" "28a104f642d09d3e5c62ce3464ea2c143b9130167282ea97ddcc3607b381823f" "3d5ef3d7ed58c9ad321f05360ad8a6b24585b9c49abcee67bdcbb0fe583a6950" "72a81c54c97b9e5efcc3ea214382615649ebb539cb4f2fe3a46cd12af72c7607" default))
+ '(helm-minibuffer-history-key "M-p"))
+(custom-set-faces
+ ;; custom-set-faces was added by Custom.
+ ;; If you edit it by hand, you could mess it up, so be careful.
+ ;; Your init file should contain only one such instance.
+ ;; If there is more than one, they won't work right.
+ )
+</code>
+</pre>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+			<h1><a href="https://matthewroll.com/2021/01/05/a-healthy-news.html">A Healthy News Diet II</a></h1>
+		
+
+        <a href="https://matthewroll.com/2021/01/05/a-healthy-news.html" class="u-url"><time class="dt-published" datetime="2021-01-05 20:11:22 -0800">Jan 5, 2021</time></a>
+
+        <div class="e-content">
+         	
+
+<p>In the <a href="https://matthewroll.com/2020/12/31/a-healthy-news.html">previous post</a> I described what I thought a healthy news diet might look like. I wanted to lay out a framework that would allow me to stay informed in ways I care about, but would also keep me from using news as a way to pass time and indulge in an addiction to the feed. I came up with the following criteria for a healthy news diet:</p>
+
+<ul>
+<li>Specific things you want to get out of reading news</li>
+<li>A plan for how to get those things out of reading news</li>
+<li>A list of non-news activities you want to use to pass time</li>
+<li>Slots during your week that you will use to read news</li>
+</ul>
+
+<p>In this post I&rsquo;m going to fill in each of those items for myself. Once I&rsquo;ve filled out that plan, I&rsquo;ll start to follow it. And I will keep track of how closely I follow it. In my paper journal I&rsquo;ve added two sections to track</p>
+
+<ol>
+<li>how many times I use the predetermined slots to read the news</li>
+<li>how many times outside of the predetermined slots I read news</li>
+</ol>
+
+<p>The combination of those statistics should be a good measurement of how closely I&rsquo;m sticking to my new &ldquo;healthy news diet.&rdquo;</p>
+
+<p>That&rsquo;s just the quantitative side. After a month I&rsquo;ll do a write up of how I feel it&rsquo;s going.</p>
+
+<h1 id="specific-things-you-want-to-get-out-of-reading-news">Specific things you want to get out of reading news</h1>
+
+<p>I have a hunch keeping this list short is important. Maybe a rule of thumb would be to keep it under five. I care to keep up-to-date on</p>
+
+<ul>
+<li>The health of the US economy</li>
+<li>Virus outbreaks</li>
+<li>New tech around cloud-based app development</li>
+</ul>
+
+<p>As far as this section is concerned, I think that&rsquo;s really all you need. A list of bullets. They can be super high level, because you will have time to think more carefully and drill down on each of them in the next section.</p>
+
+<h1 id="a-plan-for-how-to-get-those-things-out-of-reading-news">A plan for how to get those things out of reading news</h1>
+
+<p>This section is for coming up with what information you are going to look for and what sources you are going to look at for each of the items in the previous section.</p>
+
+<h2 id="the-health-of-the-us-economy">The health of the US economy</h2>
+
+<p>There are lots of statistics that people use to measure the health of the economy. I looked at a bunch of them and decided I care about knowing the current state and trends over time of the following:</p>
+
+<ul>
+<li>Weekly unemployment claims</li>
+<li>Percent change in the price of the SP 500 over the past week, month, and quarter.</li>
+<li>Consumer spending</li>
+<li>Corporate debt levels</li>
+<li>Government debt levels</li>
+<li>Rate of inflation</li>
+<li>Treasury Yield Curve</li>
+</ul>
+
+<p>Now, the US economy is a massive beast ($20tn!) and the statistics listed above are not likely to change much week to week. So I&rsquo;m thinking of only checking these once every month or even every quarter.</p>
+
+<p>I found a site called <a href="https://tradingeconomics.com/">Trading Economics</a> which seems to provide reputable time series charts for every stat in my list, except the Treasury Yield Curve, which I can get from <a href="https://www.treasury.gov/resource-center/data-chart-center/interest-rates/Pages/TextView.aspx?data=yield">treasury.gov</a>.</p>
+
+<h2 id="virus-outbreaks">Virus outbreaks</h2>
+
+<p>Before 2020, I would not have placed news about viruses high on my list of things to keep track of. In fact it would not have made my list. But obviously things are different now.</p>
+
+<p>Throughout the coronavirus pandemic, I&rsquo;ve been able to stay a step ahead of mainstream news and online publications (CNN, WSJ, NYT, Vox, Slate, etc.) by following smart people and scientists on Twitter. February 27th was the first day I started taking coronavirus seriously (I really should have seen it sooner, but I was on vacation in India), and it was because of what I saw these people saying on Twitter. At the time, worrying about the virus was seen mostly as overreacting and handwringing. Hip publications were writing articles mocking the tech industry for swearing off handshakes. If you wanted to find content that was being the correct level of worried about what was coming down the pike, you had three options, as far as I can tell:</p>
+
+<ul>
+<li>A few prominent SV venture capitalists (<a href="https://twitter.com/paulg/status/1233826194350649345">Paul Graham</a>, <a href="https://twitter.com/balajis/status/1233177158182416384">Balaji Srinivasan</a>)</li>
+<li>Bay Area Rationalists (<a href="https://putanumonit.com/2020/02/27/seeing-the-smoke/">Jacob Falkovich</a>, <a href="https://twitter.com/WilliamAEden/status/1232840971231981568">William Eden</a>)</li>
+<li>Epidemiologists (<a href="https://twitter.com/NAChristakis/status/1233147509557493760">Nicholas Christakis</a>, <a href="https://twitter.com/firefoxx66/status/1233666678841597952">Emma Hodcroft</a>)</li>
+</ul>
+
+<p>While I appreciate the level of independent thinking that was required for the first two groups in that list to be able to spot the threat and talk about it so quickly, they all mostly tweet about things other than viruses. I&rsquo;d like to keep that independent thinking around, which is why I follow these people in my general feed. But to watch viruses specifically, I think the best thing to do is make a <a href="https://help.twitter.com/en/using-twitter/twitter-lists">Twitter List</a> full of epidemiologists, which I have done and <a href="https://twitter.com/i/lists/1342720302959104000">made public</a>.</p>
+
+<p>That&rsquo;s where I&rsquo;ll go every week to get a feel for what&rsquo;s going on in the world of viruses. For the time being it will serve mostly as a way to stay current on all things COVID, but after we pass through this crisis, I expect it will be among the best places on the internet to keep a finger on the pulse of potential epidemics around the world.</p>
+
+<h2 id="new-tech-around-cloud-based-app-development">New tech around cloud-based app development</h2>
+
+<p>I fancy myself a product developer. My day job is fullstack engineer for a company that sells a software service for pulling insights out of text. My current ambition is to build my own software-as-a-service company that will one day provide my full income. And I have this belief that every day, new tools and products and technologies are being built that make it easier and easier to build and run an online software business. I want to stay informed about what&rsquo;s happening in this space.</p>
+
+<p>An example, to hopefully illustrate what I mean, is Stripe&rsquo;s <a href="https://stripe.com/docs/billing/subscriptions/customer-portal">Customer Portal</a>. I learned about this new product from a <a href="https://twitter.com/patrickc/status/1277703540928942080">tweet</a> from Patrick Collison. That afternoon I used that newly released Stripe feature to build subscription billing into my library, <a href="https://staqjs.com/">Staq.js</a>. Actionable news.</p>
+
+<p>To keep an eye out for more opportunities like that, I&rsquo;ve created a <a href="https://twitter.com/i/lists/1345258903584395264">Web Dev</a> list on Twitter. Curation for this one is not as easy as the list for epidemiologists, but I&rsquo;m confident I can gradually refine it to be a great place for keeping current on what technologies people are using to build great products for the web.</p>
+
+<h1 id="a-list-of-non-news-activities-you-want-to-use-to-pass-time">A list of non-news activities you want to use to pass time</h1>
+
+<p>This section is for coming up with and writing down a list of things you will do <strong>instead of reading news</strong> when the temptation inevitably arises throughout the course of your day. This is really important. If you don&rsquo;t have alternatives to reach for, you&rsquo;ll end up pulling out your phone and scrolling.</p>
+
+<p>My alternatives:</p>
+
+<ul>
+<li>Reading a book on the phone</li>
+<li>Doing chess puzzles on Li Chess</li>
+<li>Read long form content</li>
+<li>Read a newsletter</li>
+</ul>
+
+<p>It&rsquo;s worth getting into details about these, since it will reduce the activation energy needed to get started with any of them if you can visualize what it takes to start doing it.</p>
+
+<h2 id="reading-a-book-on-the-phone">Reading a book on the phone</h2>
+
+<p>I have the Books app in the dock of my iPhone, and I&rsquo;m always in the middle of reading something there. Last month it was <em>The Internet of Money</em>; right now it&rsquo;s <em>Mastering Bitcoin</em>. I even like to have a variety available, so if I&rsquo;m not in the mood for non-fiction, I can still read to pass the time. Right now I have Agatha Christie&rsquo;s <em>And Then There Were None</em> queued up if I&rsquo;m not up for ingesting more about how blockchains work.</p>
+
+<h2 id="doing-chess-puzzles-on-li-chess">Doing chess puzzles on Li Chess</h2>
+
+<p>I have the Li Chess app on my phone, and getting to an endless list of puzzles is only two clicks away: one to open the app and another to click into the puzzle of the day.</p>
+
+<h2 id="reading-long-form-content">Reading long form content</h2>
+
+<p>I haven&rsquo;t ever intentionally read long form journalism before. I&rsquo;ve stumbled across a few articles and read all the way through them for whatever reason. But I&rsquo;ve never sat down and been like &ldquo;Ok, let&rsquo;s read a 5,000 word piece on <a href="https://longreads.com/2020/11/16/the-end-of-the-wolf-the-start-of-the-questions/">&lsquo;The End of The Wolf, The Start of The Questions&rsquo;</a>.&rdquo; But I love reading and there&rsquo;s a lot of this stuff to read, and maybe some of it is even good. So I figure I&rsquo;ll give it a try as a way to keep me off the feed.</p>
+
+<p>I&rsquo;d like to come up with a system for deciding what articles to read. I don&rsquo;t want my time reading long form to turn into &ldquo;my time scrolling through lists of long form articles as if it were Netflix.&rdquo;</p>
+
+<p>I&rsquo;ll come up with a list of three articles that look good and put links to them in a note. When I decide I want to read some long form, I&rsquo;ll just read the top one. When I&rsquo;ve read two and there&rsquo;s only one left on the list, I&rsquo;ll find two more and put them under that one. This way I never have to  search for articles when I want to be reading one to pass time.</p>
+
+<p>Here are the first three:</p>
+
+<ul>
+<li><a href="https://www.laphamsquarterly.org/democracy/nongolozas-ghost">Nongoloza&rsquo;s Ghost</a></li>
+<li><a href="https://harpers.org/archive/1932/10/in-praise-of-idleness/?single=1">In Praise of Idleness</a></li>
+<li><a href="https://roadsandkingdoms.com/2015/vegas-on-the-black-sea/">Vegas On the Black Sea</a></li>
+</ul>
+
+<h2 id="read-a-newsletter">Read a newsletter</h2>
+
+<p>At the moment I only read one newsletter consistently, and that is the marvelous <a href="https://www.bloomberg.com/opinion/authors/ARbTQlRLRjE/matthew-s-levine">Money Stuff</a> by Matt Levine. I subscribe to <a href="https://andrewsullivan.substack.com/">The Weekly Dish</a> as well, but I don&rsquo;t think I&rsquo;ve ever read all the way through an entire edition. But since newsletters like these are essentially walls of potentially entertaining and informative text delivered to my inbox, I might turn to them more as a way to hide from the feed.</p>
+
+<h1 id="slots-during-your-week-that-you-will-use-to-read-news">Slots during your week that you will use to read news</h1>
+
+<p>I&rsquo;ll start off with two one hour slots per week, on Wednesdays and Saturdays. I don&rsquo;t know that I can schedule them at specific times, because my evenings are a little fluid. But I should be able to make them happen sometime in the evening each one of those days.</p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+
+        <a href="https://matthewroll.com/2021/01/05/omg-money-stuff.html" class="u-url"><time class="dt-published" datetime="2021-01-05 09:06:28 -0800">Jan 5, 2021</time></a>
+
+        <div class="e-content">
+         	<p>Omg. Money Stuff is back! 😃💵</p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+			<h1><a href="https://matthewroll.com/2020/12/31/a-healthy-news.html">A Healthy News Diet</a></h1>
+		
+
+        <a href="https://matthewroll.com/2020/12/31/a-healthy-news.html" class="u-url"><time class="dt-published" datetime="2020-12-31 13:06:20 -0800">Dec 31, 2020</time></a>
+
+        <div class="e-content">
+         	
+
+<p><em>[Note: This post is a reaction to my drastic increase in Twitter consumption this year. All uses of the second person &ldquo;you&rdquo; and &ldquo;your&rdquo; in this post are in fact me talking to myself.]</em></p>
+
+<p>If you aren’t careful, you’ll spend too much of your life scrolling a feed. Might be Twitter, HN, Reddit, NYT, etc. Could be some app that doesn’t exist yet. Doesn’t matter. The result is the same. You don’t get as much done as you want, and your soul slowly drains out into that screen.</p>
+
+<p>The problem is, scrolling through that feed can be useful. It’s not useful very often, but it&rsquo;s useful enough that you don&rsquo;t feel you should completely quit. Mostly you&rsquo;re just wasting time, but you need to know what&rsquo;s going on in the world somehow. It&rsquo;s just that the signal to noise ratio by default is so so so so bad.</p>
+
+<p>Maybe there&rsquo;s a way to increase the signal and decrease the noise. Maybe there&rsquo;s a way to make news reading an intentional part of your life that takes exactly the amount of time you allow it. Maybe. That&rsquo;s what I want to work towards in this post, anyhow. Which leads us to my working hypothesis:</p>
+
+<p><strong>There exists a balanced news diet that results in learning useful things while allowing for enough time to be productive, and also keeping your soul.</strong></p>
+
+<p>Finding that diet will require work, and sticking to it will require work. No free lunch, and all that.</p>
+
+<p>I feel like a first principles approach is called for.</p>
+
+<p>Why read news? For me it’s a way to find out what’s happening in areas of the world that I care about. It’s a way of learning about opportunities for investment, whether that be in the form of money, like buying bitcoin, or in the form of time, like deciding to read up on or tinker with a technology that seems like it will be important. Reading news is also a way to see warning signs that tell me I should be preparing for something or changing my behavior, exactly what happened this year with coronavirus.</p>
+
+<p>So what would happen if I didn’t read news? I would miss out on investments and possible career opportunities. And I might be caught wrong-footed in black swan events like a health crisis, a violent conflict, or an economic crisis.</p>
+
+<p>I think there are plenty of people who for whatever reason think that being on the lookout for such disasters is overkill. I’m not one of those people. I want to be prepared.</p>
+
+<p>Which I think logically dictates that I read some news, in some form that reliably sends me enough signal to benefit from what I described above.</p>
+
+<p>I think if you view news as a way to get information, rather than a way to pass time, then you might get most of the way to being able to implement and stick to a healthy news diet. If you just have a set of other activities that you view as ways of passing time, then when you’re bored, instead of pulling out your phone and scrolling, you’ll resort to one of those other activities.</p>
+
+<p>In that framework, reading news would be an activity that was slotted to a particular time and frequency, much like dinner or going to the gym. “I read news twice a week, on Wednesdays and Saturdays, for about an hour after dinner,” would be a typical thing to hear if people thought of news consumption as an activity whose purpose was the intake of useful information, rather than a way to pass time and release dopamine.</p>
+
+<p>So I guess that’s what a healthy news diet consists of:</p>
+
+<ul>
+<li>Specific things you want to get out of reading news</li>
+<li>A plan for how to get those things out of reading news</li>
+<li>A list of non-news activities you want to use to pass time</li>
+<li>Slots during your week that you will use to read news</li>
+</ul>
+
+<h2 id="examples-of-specific-things-you-might-want-to-get-out-of-reading-news">Examples of specific things you might want to get out of reading news</h2>
+
+<ul>
+<li>The health of the economy</li>
+<li>Things that might be changing or about to change the health of the economy</li>
+<li>Virus outbreaks</li>
+<li>New technological developments</li>
+<li>New scientific developments</li>
+<li>Changes in government around the world</li>
+<li>Changes in key legislative positions in the US</li>
+<li>The price of some commodity or stock or asset or security, etc.</li>
+<li>Countries with the highest rate of growth</li>
+</ul>
+
+<h2 id="examples-of-non-news-things-that-you-can-do-to-pass-time">Examples of non-news things that you can do to pass time</h2>
+
+<ul>
+<li>Read a book</li>
+<li>Write a blog post/essay</li>
+<li>Read high quality long form content</li>
+<li>Play chess</li>
+<li>Play go</li>
+<li>Write a journal entry</li>
+<li>Watch an episode of some show (although try to keep it to one episode)</li>
+</ul>
+
+<p>I think one of the reasons pulling out your phone and scrolling has become the default behavior when a moment of downtime rolls around is that it&rsquo;s the most convenient action you know how to take. A news feed is often the closest form of entertainment, only two taps away.</p>
+
+<p>This isn&rsquo;t some inherent property of the feed, it being so convenient. It&rsquo;s just that to have something else be equally convenient, some setup is required. You can just as easily have an e-book or a chess game available in two taps.</p>
+
+<p><strong>How to get books on your iPhone</strong></p>
+
+<p>I have an iPhone, but I&rsquo;m sure similar steps work for Android.</p>
+
+<ol>
+<li>Open the Books app</li>
+<li>Go the the Book Store tab</li>
+<li>Search for books you want to read</li>
+<li>Buy/download them</li>
+</ol>
+
+<p>If you can&rsquo;t find a book you&rsquo;re looking for, or don&rsquo;t have the funds, or don&rsquo;t agree with capitalism, or whatever, you can find almost any book, in epub or pdf format, on <a href="http://libgen.rs/">Library Genesis</a>.</p>
+
+<p><strong>How to write a blog post/essay on your phone</strong></p>
+
+<p>Another great activity that could be available in two taps of the light rectangle is working on some writing. The Notes app that comes installed on the iPhone is a decent place to get started. Create a folder for Posts and start filling it up with stuff whenever you&rsquo;re bored.</p>
+
+<p>If you want an app that looks nicer or has more functionality, there are lots of options. I use <a href="https://notion.so">Notion</a>.</p>
+
+<p><strong>Where to find good long form content</strong></p>
+
+<p>I don&rsquo;t read long form content, so please take suggestions on this list as options to check out for yourself, not as strong recommendations. I do plan on reading more from these sites as I start to implement my news diet, however, so I may come back and prune/add depending on what I find.</p>
+
+<ul>
+<li><a href="https://longreads.com/">https://longreads.com/</a></li>
+<li><a href="https://www.quantamagazine.org/">https://www.quantamagazine.org/</a></li>
+<li><a href="http://nautil.us/">http://nautil.us/</a></li>
+<li><a href="https://longform.org/">https://longform.org/</a></li>
+<li><a href="https://thebrowser.com/">https://thebrowser.com/</a></li>
+</ul>
+
+<p><strong>How to play chess on your phone</strong></p>
+
+<p>I recommend the <a href="https://lichess.org/">Li Chess</a> app. You can play against friends or strangers in a variety of game formats. There is also an inexhaustible library of chess puzzles.</p>
+
+<h2 id="getting-what-you-want-out-of-news">Getting what you want out of news</h2>
+
+<p>If you are giving yourself a set amount of time to read news every week, you&rsquo;ll need to do it efficiently in order to learn what you want from it.</p>
+
+<p>I think the next step after coming up with a list of things you want to get out of reading news is to go through the list and come up with where the information about each item is going to come from.</p>
+
+<p>For example, if one thing you want to keep tabs on by reading news is the health of the US economy, you might have a list of statistics you use to get a picture of that. So maybe like</p>
+
+<ul>
+<li>Weekly unemployment claims</li>
+<li>Percent change in the price of the SP 500 over the past week, month, and quarter.</li>
+<li>Consumer spending</li>
+<li>Corporate debt levels</li>
+<li>Government debt levels</li>
+<li>Rate of inflation</li>
+</ul>
+
+<p>If you have a list of stocks you care about knowing the price of, you can make a watchlist in most finance apps.</p>
+
+<p>If you care about being on the lookout for virus outbreaks, the best thing I know of to do is follow epidemiology experts on Twitter. I have a list called <a href="https://twitter.com/i/lists/1342720302959104000">Epidemiology</a>. I think this strategy — building lists of experts on Twitter — is actually the best way of keeping up to date on fields with even a moderate level of technical complexity. You can’t really rely on journalists to have good takes on emerging issues.</p>
+
+<p>Now you have a list where each item consists of two parts: a thing you want to know, and where to look for that knowledge. So your news-reading time can be spent by going through that list and looking in the pre-determined places for updates on things you care about.</p>
+
+<p>My hope is that after going through your list in this way, the result is a feeling of satiation. You&rsquo;re confident that your model of the world is up to date in the ways you care about, and you don&rsquo;t feel the constant pull of the feed.</p>
+
+<p>That&rsquo;s the hope anyway! I plan on writing down my own &ldquo;healthy news diet&rdquo; list sometime soon. I&rsquo;ll post it when it&rsquo;s ready, and will keep the blog updated on my experience of trying to stick to it.</p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+
+        <a href="https://matthewroll.com/2020/12/27/now-we-live.html" class="u-url"><time class="dt-published" datetime="2020-12-27 13:22:56 -0800">Dec 27, 2020</time></a>
+
+        <div class="e-content">
+         	<p>“Now, we live in a new world, a world in which currency is a choice, and not just a choice in terms of use&hellip; Any of us can now create a currency using a simple web form.”</p>
+
+<p>— Andreas Antonopoulos, <em>The Internet of Money</em></p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+
+        <a href="https://matthewroll.com/2020/12/19/heist-movie-you.html" class="u-url"><time class="dt-published" datetime="2020-12-19 20:34:20 -0800">Dec 19, 2020</time></a>
+
+        <div class="e-content">
+         	<p>Heist movie you might not have heard of: Den of Thieves. On Netflix atm.</p>
+
+<p>Gerard Butler plays a morally ambiguous cop, and Nicky Sobotka from <em>The Wire</em> plays the head of an ex-military bank job crew. The plot plays out back and forth between both sides of the law. I&rsquo;m only a third of the way through right now, but it&rsquo;s pretty good so far.</p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+
+        <a href="https://matthewroll.com/2020/12/17/getting-into-a.html" class="u-url"><time class="dt-published" datetime="2020-12-17 21:33:00 -0800">Dec 17, 2020</time></a>
+
+        <div class="e-content">
+         	<p>Getting into a good book makes me wonder what anyone ever watches tv for.</p>
+
+<p>(disclaimer: I watch a fair amount of tv)</p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+			<h1><a href="https://matthewroll.com/2020/12/12/why-im-not.html">Why I&#39;m Not Super Interested in Money Management</a></h1>
+		
+
+        <a href="https://matthewroll.com/2020/12/12/why-im-not.html" class="u-url"><time class="dt-published" datetime="2020-12-12 19:14:00 -0800">Dec 12, 2020</time></a>
+
+        <div class="e-content">
+         	<p>There’s obviously a lot of money in finance. In making decisions about where to put people&rsquo;s money. Wall Street bankers are infamous for making hundreds of thousands or millions of dollars a year in bonuses and/or commissions on deals. At first glance it seems like money management is a great place to look for opportunities to get rich.</p>
+
+<p>But there’s a catch. A good manager can only expect to return like 5-8% on average[1]. So in order to make $1MM per year at a five percent rate of return, you need to be investing $20MM. And if you had $20MM, you would already be rich. So where is one to find that much capital to put on the line in order to make a lot of money? The way Wall Street does it is convince rich people to let them play with their money. &ldquo;We know what we&rsquo;re doing,&rdquo; the bankers say. &ldquo;Just let us use your money to make more money, and pay us with a percentage of it,&rdquo; they say.</p>
+
+<p>And sometimes those finance people are able to use other people&rsquo;s money to make money, and those finance people get rich doing so. But just as often, if not more often, those finance people make decisions that result in returns that are worse than if the rich people had kept their money and just spread it across every company in the market.</p>
+
+<p>Looking in from the outside, it seems to me that you can&rsquo;t expect to consistently outperform the market. But that&rsquo;s actually not my biggest problem with the idea of working in finance.</p>
+
+<p>My biggest problem is the risk profile of the job. I don&rsquo;t like the idea of making bets with millions of dollars of other people&rsquo;s money. I think it would be a constant source of uncomfort in my life. I can deal with risk, and stress, and high stakes. But I prefer to do so with my own assets on the line. I can make sure to only bet with what is comfortable for me to lose.</p>
+
+<p>And so the idea of money management as a career is not <em>super interesting</em> to me. It&rsquo;s <em>interesting</em>, because I like data and I like money, and theoretically working at the intersection of those two things would be really cool. But the big picture is that without using lots of other people&rsquo;s money to make bets, the expected value just isn&rsquo;t there.</p>
+
+<hr />
+
+<p>[1] This range isn&rsquo;t based on any specific data, just my understanding from reading a lot about money management.</p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+
+        <a href="https://matthewroll.com/2020/12/12/i-have-a.html" class="u-url"><time class="dt-published" datetime="2020-12-12 00:57:22 -0800">Dec 12, 2020</time></a>
+
+        <div class="e-content">
+         	<p>I have a feeling that <em>Anathem</em> is really good, it just takes a couple hundred pages to get there. That’s why, more than ten years after first reading <em>Cryptonomicon</em>, it’s the only Stephenson book I haven’t read. I’m 120 pages in and determined to finish it this time, however.</p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+
+        <a href="https://matthewroll.com/2020/12/04/listening-on-repeat.html" class="u-url"><time class="dt-published" datetime="2020-12-04 17:49:28 -0800">Dec 4, 2020</time></a>
+
+        <div class="e-content">
+         	<p>Listening on repeat: <a href="https://www.youtube.com/watch?v=aVLviSRNeLw">www.youtube.com/watch</a></p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+
+        <a href="https://matthewroll.com/2020/12/04/honestly-the-most.html" class="u-url"><time class="dt-published" datetime="2020-12-04 14:14:39 -0800">Dec 4, 2020</time></a>
+
+        <div class="e-content">
+         	<p>Honestly the most interesting thing about the second half of the Ender Quartet is the plot arc around the descoladores.</p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+
+        <a href="https://matthewroll.com/2020/10/16/reading-hobbes-leviathan.html" class="u-url"><time class="dt-published" datetime="2020-10-16 22:42:41 -0800">Oct 16, 2020</time></a>
+
+        <div class="e-content">
+         	<p>Reading Hobbes’ <em>Leviathan</em> and this line just came out of the book and smacked me in the face.</p>
+
+<p>“And therefore in geometry (which is the only science that it hath pleased God hitherto to bestow on mankind)&hellip;”</p>
+
+<p>It’s like he knew what was coming. I get the feeling he was so sure of the eventual progression of this thing (science) that he could tell was just starting in his lifetime, with the concentration of Natural Philosophers around London and the formation of the Royal Society.</p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+			<h1><a href="https://matthewroll.com/2020/10/05/learned-from-the.html">Learned from the FT 10.05.2020</a></h1>
+		
+
+        <a href="https://matthewroll.com/2020/10/05/learned-from-the.html" class="u-url"><time class="dt-published" datetime="2020-10-05 20:09:00 -0800">Oct 5, 2020</time></a>
+
+        <div class="e-content">
+         	
+
+<h3 id="things-global-reserve-currency-is-used-for">Things global reserve currency is used for</h3>
+
+<ul>
+<li>Foreign Exchange (FX) reserves</li>
+<li>Cross-border exposures</li>
+<li>International debt</li>
+<li>Swift payments</li>
+</ul>
+
+<p>A global reserve currency is one that no one minds owning or transacting with. So when doing transactions between parties in different countries, it makes sense a global reserve currency is the medium of exchange.</p>
+
+<blockquote>
+<p>Moreover, on many metrics, the dollar faces few rivals. Whether in terms of its use in cross-border payments or its share of foreign exchange reserves held by global central banks, the dollar&rsquo;s dominance is sweeping&hellip;</p>
+</blockquote>
+
+<h3 id="what-is-free-float">What is free float?</h3>
+
+<p>A company&rsquo;s &ldquo;free float&rdquo; refers to its shares that are available to trade publicly. This excludes shares that are outstanding but not exercised, like stock options granted to company employees.</p>
+
+<p>According to Investopedia, calculating a company&rsquo;s market cap using the <a href="https://www.investopedia.com/terms/f/freefloatmethodology.asp">free float methodology</a> more accurately reflects market trends, because it only takes into account shares that are available for trade.</p>
+
+<blockquote>
+<p>As for NTT&rsquo;s shareholders, a huge debt pile is about to surface. It will need to borrow more than ¥4tn to finance the deal. It had about ¥1tn in cash and equivalents earlier this year. There is little leeway for extra costs.</p>
+
+<p>Worse, NTT&rsquo;s free float is limited by locals laws that require the government to hold at least one-third of its shares. Any hopes of a buyback have just been pushed further out of reach. This record take-private deal should serve as a renewed warning to investors that, in Japan, telecoms stocks are not defensive investments.</p>
+</blockquote>
+
+<h3 id="why-use-negative-interest-rates">Why use negative interest rates?</h3>
+
+<p>Central banks may lower their interest rates below zero as a way of driving cash out of bank accounts and into the economy. It&rsquo;s a tool that central banks may turn to during a deep recession, after decreasing interest rates down to zero has failed to spur on the desired spending and investment activity.</p>
+
+<p>Having to pay the bank to store your money there is not very appealing, and so a negative interest rate policy is an incentive to find other uses for your money.</p>
+
+<blockquote>
+<p>Sterling rallied on Moday when Dave Ramsden, the deputy goveror for markets and banking, said the BoE was not about to use negative rates, but had not rejected the policy outright. Negative rates remained very much in the bank&rsquo;s &ldquo;toolbox&rdquo;, he said&hellip;</p>
+</blockquote>
+
+<h3 id="what-constitutes-a-hostile-takeover">What constitutes a hostile takeover?</h3>
+
+<p>A hostile takeover is when one company attempts to purchase ownership over another company against the wishes of the target company&rsquo;s management/board. This can be done by going directly to the target company&rsquo;s shareholders and asking them to either sell their shares, or allow the use of their proxy votes.</p>
+
+<p>If enough shareholders sell their shares to the acquiring company, then the acquiring company will have dominant voting power in the target company.</p>
+
+<p>Similarly, if enough proxy votes are acquired to vote out uncooperating board members, new board members may be installed who are more tolerating of a potential takeover deal.</p>
+
+<blockquote>
+<p>UK security group G4S yesterday received a formal £3bn hostile takeover bid from Canadian rival GardaWorld, which said the company needed fresh management to deal with &ldquo;scandals, crises and lawsuits&rdquo;.</p>
+</blockquote>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+			<h1><a href="https://matthewroll.com/2020/09/28/learned-from-the.html">Learned from the FT 9.28.2020</a></h1>
+		
+
+        <a href="https://matthewroll.com/2020/09/28/learned-from-the.html" class="u-url"><time class="dt-published" datetime="2020-09-28 20:47:01 -0800">Sep 28, 2020</time></a>
+
+        <div class="e-content">
+         	
+
+<h3 id="why-are-silver-and-gold-a-hedge-against-inflation">Why are silver and gold a hedge against inflation?</h3>
+
+<p>This question came up reading a story on recent silver prices in Monday&rsquo;s paper. Here&rsquo;s the quote:</p>
+
+<blockquote>
+<p>Precious metals are often seen as a protection against inflation.</p>
+</blockquote>
+
+<p>After some googling, here&rsquo;s what I came up with.</p>
+
+<p>Precious metals have intrinsic value because of their scarcity and real world use cases. It doesn’t seem like there’s a financial mechanics reason why the price of gold goes up to outpace inflation. It seems like people just in general believe that gold will keep it’s value better than other assets during inflation, and so they flock to buy it, and then the price goes up because of the increased demand, and it’s a self fulfilling prophecy.</p>
+
+<hr />
+
+<h3 id="cancer-detection-moving-the-way-of-liquid-biopsy">Cancer detection moving the way of liquid biopsy</h3>
+
+<p>I think cheap, non-intrusive tests that screen for most/all serious diseases is the future of healthcare. Catching life threatening illness early is often the difference between being able to successfully beat it or not. I can only imagine the lives this technology will eventually save. Maybe mine.</p>
+
+<p>The Illumina-founded liquid biopsy company Grail is currently running early versions of this type of test on 100k people, having obtained a breakthrough therapy designation from the FDA last year.</p>
+
+<blockquote>
+<p>Grail specialises in the emerging field of liquid biopsy: taking a blood sample to test for cancer. By detecting tumour DNA in the bloodstream, the technology can identify more than 50 cancers, including where they are located in the body, with a false positive rate of less than 1 percent.
+The aim is to develop a product that will detect cancers early and in a less intrusive way than traditional biopsies, which involve taking a tissue sample. However, creating such a product takes time, because false alarms are a risk when people without symptoms are tested.
+The company&rsquo;s test is still in very large trials — including one with 100,000 participants. Last year, it received a breakthrough designation from the US Food and Drug Administration, which aims to accelerate the review of new products.</p>
+</blockquote>
+
+<hr />
+
+<h3 id="what-is-a-margin-call">What is a margin call?</h3>
+
+<p>Another term from one of this week&rsquo;s papers that I had to look up. This in an opinion piece about the need for more regulation in US Treasury markets.</p>
+
+<blockquote>
+<p>However, when Covid-19 triggered a scramble for cash, including ditching Treasuries, the trading ecosystem was unable to cope with the selling spree. Treasury yields jumped and the spread between Treasury futures and bonds ballooned. This triggered margin calls for hedge funds that had borrowed hundreds of billions of dollars in the short-term repo market to bet on the difference narrowing, exacerbating the dislocation.</p>
+</blockquote>
+
+<p>A margin call is when the value in an investors account falls below the amount required by their broker, whom the investor has borrowed money from to bet on the market. When the investor&rsquo;s account falls below a certain amount, called the &ldquo;maintenance amount,&rdquo; the broker will demand the investor deposit more cash or securities to bring the account above the amount.</p>
+
+<hr />
+
+<h3 id="price-controls-in-your-back-pocket">Price controls in your back pocket</h3>
+
+<p>Countries can stockpile a commodity and use it to control prices when it becomes necessary to do so.</p>
+
+<blockquote>
+<p>The country reported its first case of African swine fever in 2018. Since, more than 100m pigs have been lost, pushing pork to record highs. China has sold frozen meat from its reserves into the domestic market to try to curb prices.</p>
+</blockquote>
+
+<hr />
+
+<h3 id="why-do-bond-prices-rise-when-yields-fall">Why do bond prices rise when yields fall?</h3>
+
+<p>Another question from a story questioning the performance of the long-considered-safe 60/40 portfolio.</p>
+
+<blockquote>
+<p>A mix of equities and bonds split 60/40 has generated a compound annual growth rate of 10.2 per cent in the US since 1980. It is up 7 per cent this year — the S&amp;P 500 has returned 4.2 per cent, including the reinvestment of dividends, and the Bloomberg Barclays index of US Treasuries has returned as much as 11.3 per cent, as official interest rates have been taken to zero. Bond prices rise as yields fall.</p>
+</blockquote>
+
+<p>The price of a bond will rise if yields on similar bonds fall. For example, a bond yielding 5% due in 5 years is more valuable than another bond due in 5 years yielding ony 3%. If most of the bonds on the market are yielding only 3% interest, any bonds yielding an interest rate higher than that will be more valuable.</p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+
+        <a href="https://matthewroll.com/2020/09/21/best-euphemism-for.html" class="u-url"><time class="dt-published" datetime="2020-09-21 21:46:10 -0800">Sep 21, 2020</time></a>
+
+        <div class="e-content">
+         	<p>Best euphemism for the French Revolution goes to Thomas Piketty, who in chapter 10 of <em>Capital in the Twenty-First Century</em> describes it as a time when “&hellip;the fiscal privileges of the nobility were abolished.”</p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+			<h1><a href="https://matthewroll.com/2020/09/21/learned-from-the.html">Learned from the FT 9.21.2020</a></h1>
+		
+
+        <a href="https://matthewroll.com/2020/09/21/learned-from-the.html" class="u-url"><time class="dt-published" datetime="2020-09-21 21:06:00 -0800">Sep 21, 2020</time></a>
+
+        <div class="e-content">
+         	
+
+<p>Just a couple tidbits this week.</p>
+
+<h3 id="supply-side-control-as-monopoly-defense">Supply side control as monopoly defense</h3>
+
+<p>By controlling supply, and therefore price, a company that dominates production of some good can hold onto its monopoly by bankrupting competitors who get too big.</p>
+
+<p>This works especially when in a field where entry and operational costs are high.</p>
+
+<p>The company with a monopoly can flood the market to drive down the price, which in turn drives down the competitions revenue. The monopoly company has cash reserves to weather the storm, but the newcomer has to shut down because they can’t cover operating expenses at the lower price point.</p>
+
+<blockquote>
+<p>“The Chinese state-owned producers can do the Saudi [oil] trick,” he says, adding “They turn on the taps, flood the market, the price of dysprosium crashes, the new entrant is washed out, and then they’ve re established their monopoly.”</p>
+</blockquote>
+
+<hr />
+
+<h3 id="competition-for-foreign-investment">Competition for foreign investment</h3>
+
+<p>Countries compete with each other for foreign investment. This is obvious, but I hadn’t thought about it like that before. Companies from other countries, and even other countries themselves, want to send their money to countries where they will see the highest return.</p>
+
+<p>Countries with better infrastructure, less corruption, and less violence are more attractive to foreign investors.</p>
+
+<blockquote>
+<p>Even with the sharp drop in demand for power during the lockdown, this year has already had more outages than ever before.</p>
+
+<p>Investors such as miners, which rely on steady power, will question whether South Africa is the right place for investment, said Ms Leoka.</p>
+</blockquote>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+
+        <a href="https://matthewroll.com/2020/09/18/i-feel-like.html" class="u-url"><time class="dt-published" datetime="2020-09-18 21:10:16 -0800">Sep 18, 2020</time></a>
+
+        <div class="e-content">
+         	<p>I feel like someday I’ll meet someone who also associates an important part of their younger years with a love for Kevin Smith movies, and we’ll be friends forever.</p>
+
+<p>Snootchie Bootchies</p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+
+        <a href="https://matthewroll.com/2020/09/15/the-way-one.html" class="u-url"><time class="dt-published" datetime="2020-09-15 20:59:28 -0800">Sep 15, 2020</time></a>
+
+        <div class="e-content">
+         	<p>The way one tries to measure inequality is never neutral.</p>
+
+<p>— Thomas Piketty, <em>Capital in the Twenty-First Century</em></p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+			<h1><a href="https://matthewroll.com/2020/09/14/learned-from-the.html">Learned from the FT 9.14.2020</a></h1>
+		
+
+        <a href="https://matthewroll.com/2020/09/14/learned-from-the.html" class="u-url"><time class="dt-published" datetime="2020-09-14 17:58:00 -0800">Sep 14, 2020</time></a>
+
+        <div class="e-content">
+         	
+
+<p>I have a Financial Times subscription for the next year, and I want to make the most of it. So I&rsquo;m starting a new series of blog posts where I record things I learn reading the paper. The paper comes weekdays Mon-Fri, and a weekend addition on Sunday. Throughout the week I&rsquo;ll read the paper and write down things I learn. On Monday I&rsquo;ll publish.</p>
+
+<p>The format of each entry will be short sections beginning with a description of what I learned. I&rsquo;ll try to follow it up with a quote from the paper.</p>
+
+<p>I want to learn things that last longer than the current newscycle, or even the current business cycle. So I won&rsquo;t be including specific stories just because I found them interesting. I&rsquo;ll only include things that improve my model of the world, whether it&rsquo;s about economics, politics, history, or anything else.</p>
+
+<p>This is the first entry in <strong>Learned from the FT</strong>.</p>
+
+<hr />
+
+<h3 id="increasing-debt-yield">Increasing Debt Yield</h3>
+
+<p>There are at least two ways of increasing the yield on a debt investment</p>
+
+<ol>
+<li>Increase risk</li>
+<li>Increase duration until maturity</li>
+</ol>
+
+<blockquote>
+<p>But what is good for corporate treasurers is less good for investors buying debt, who need to take more and more risk to boost returns.</p>
+
+<p>&ldquo;The issue now is you have to take so much duration or credit risk to get any kind of yield,&rdquo; said Monica Erickson, head of the investment grade corporate team at DoubleLine Capital in Los Angeles. &ldquo;It&rsquo;s a very frustrating market to invest in.&rdquo;</p>
+</blockquote>
+
+<p>What are other ways of increasing yield on debt?</p>
+
+<hr />
+
+<h3 id="biodiversity-asset-class">Biodiversity Asset Class</h3>
+
+<p>Former US Treasury Secretary Henry Paulson is proposing a new asset class to prevent costly biodiversity loss. He says that since pricing environmental costs is often difficult, companies and governments mostly just consider nature&rsquo;s benefits to be free. As a solution, he thinks governments should adopt policies that allow investment into things like healthy soils and watersheds.</p>
+
+<blockquote>
+<p>&hellip;This might sound far-fetched — especially coming from a former US Treasure secretary — but valuing nature as we do traditional goods and services will create incentives to avoid biodiversity destruction, manage climate change and preserve lives and livelihoods. Harnessing the power of markets can protect our environments and prevent its rapid destruction.</p>
+</blockquote>
+
+<p>I don&rsquo;t think this is a radically new idea, that costs to nature must be priced into corporate activities to protect the long term health of the planet. I like the spin of thinking about natural resources and ecosystems as an asset class that can be invested in via electronic markets. I wouldn&rsquo;t mind owning shares in my favorite ecosystems. 🌲</p>
+
+<hr />
+
+<h3 id="effect-of-tax-on-stock-price">Effect of Tax on Stock Price</h3>
+
+<p>The stock prices of companies trading at high multiples of earnings are most vulnerable to policies that increase corporate tax.</p>
+
+<p>Let&rsquo;s say you have two companies, A and B. They are both earning at $10/share, but company A is trading at 25 times earnings and company B is trading at 10 times earnings. A new tax comes along and cuts earnings for both companies by 10 percent. Let&rsquo;s look at what happens to the stock price as calculated by an earnings multiple.</p>
+
+<p>Company A original stock price = $10 * 25 = $250</p>
+
+<p>Company B original stock price = $10 * 10 = $100</p>
+
+<p>Company A new stock price = ($10 * 0.9) * 25 = $225</p>
+
+<p>Company B new earnings = ($10 * 0.9) * 10 = $90</p>
+
+<p>The company trading at a higher earnings multiple gets hit with a $25 drop in stock price, while the company trading at the lower multiple only sheds $10 per share. For shareholders who value their equity at (number of shares) * (share price), the $25 drop is a bigger hit to their investment.</p>
+
+<blockquote>
+<p>UBS reckons Mr Biden&rsquo;s tax proposals could shave about 8 per cent off S&amp;P 500 company earnings. Businesses on steep multiples would be most exposed. These include Faang stocks such as Facebook and Amazon.</p>
+</blockquote>
+
+<hr />
+
+<h3 id="currency-strength-implications">Currency Strength Implications</h3>
+
+<p>A strong currency is bad for trade income. If your goods are more expensive for other countries, they will purchase fewer of them.</p>
+
+<blockquote>
+<p>The euro is up 10 per cent against the US dollar since March, a shift that could weigh on inflation by lowering the price of imports and drag on the eurozone&rsquo;s economic recovery from the coronavirus pandemic by raising the cost of its exports to other parts of the world.</p>
+</blockquote>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+
+        <a href="https://matthewroll.com/2020/09/13/still-smoky-over.html" class="u-url"><time class="dt-published" datetime="2020-09-13 09:51:58 -0800">Sep 13, 2020</time></a>
+
+        <div class="e-content">
+         	<p>Still smoky over Palo Alto. Haven’t seen the sky in four days.</p>
+
+<p><img src="uploads/2020/470b8e3b0b.jpg" width="600" height="599" alt="" /></p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+
+        <a href="https://matthewroll.com/2020/09/03/panoramas-from-a.html" class="u-url"><time class="dt-published" datetime="2020-09-03 20:49:00 -0800">Sep 3, 2020</time></a>
+
+        <div class="e-content">
+         	<p>Panoramas from a week of hikes during staycation :)</p>
+
+<p><img src="uploads/2020/b1cc472664.png" width="361" height="600" alt="" /></p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+			<h1><a href="https://matthewroll.com/2020/08/29/on-the-craft.html">On the Craft of Typing Code Into the Computer</a></h1>
+		
+
+        <a href="https://matthewroll.com/2020/08/29/on-the-craft.html" class="u-url"><time class="dt-published" datetime="2020-08-29 10:36:00 -0800">Aug 29, 2020</time></a>
+
+        <div class="e-content">
+         	
+
+<p>For how much time people spend typing code into an editor, there’s not a lot
+written about how to do it well. And school doesn’t teach you, either. I spent
+five years in a good CS program and not one lecture was devoted to the proper
+use of your editor. Somehow the craft of typing code into a computer is not
+something people study.</p>
+
+<p>I don&rsquo;t know why that is. It&rsquo;s a quantifiable subject: there are different ways
+of putting the same characters on screen, and some of them require hitting fewer
+keys than others. We should look for those ways that minimize the number of keys
+required to get the desired characters on screen.</p>
+
+<p>The lack of interest might have to do with ideology around editors. Lots of
+programmers feel their identity is tied to their editor in some way. Maybe
+editing style &ndash; the way people type code into the editor &ndash; is also something
+that gets entangled with identity, and so becomes taboo to make judgements
+about.</p>
+
+<p>Whatever the reason for lack of good literature on the subject, it&rsquo;s one that
+interests me. I type a lot of code into the computer, and I care about doing it
+quickly. What follows are some high level thoughts on my theory of code editing.</p>
+
+<h2 id="kinds-of-actions-taken-in-the-process-of-writing-code">Kinds of Actions Taken in the Process of Writing Code</h2>
+
+<p>There are three categories of things people want to do when they hit keys with
+the editor window in focus:</p>
+
+<ol>
+<li>Take action on a single file</li>
+<li>Take action on the filesystem</li>
+<li>Take action on the editor
+<br /></li>
+</ol>
+
+<p>Before we go any further, I want to make it clear this will in no way be a
+discussion of which editor is the &ldquo;best.&rdquo; I don&rsquo;t even care to talk about how
+individual editors stack up against others along a given dimension. The choice
+of editor has almost nothing to do with optimization of editing technique. Most
+editors are extensible and can be programmed to support many editing styles. So
+in theory the ideas in this essay can be applied to any editor.</p>
+
+<h2 id="actions-on-a-single-file">Actions on a Single File</h2>
+
+<p>Actions taken on a single file in the process of writing code involve things
+like writing characters to the file, moving characters to different parts of the
+file, and navigating around the file. While I think there are ways of optimizing
+each of these areas, in this essay I will only explore the idea of writing
+characters to a file.</p>
+
+<hr />
+
+<p>The thing programmers do that allows them control over computers is type
+characters into files. This is mostly what people mean when they say someone can
+&ldquo;write code.&rdquo; They are saying that person knows what characters to type into a
+file that, when fed to the computer, will result in the computer doing some
+expected and, in some cases, useful thing.</p>
+
+<p>Programmers, however, do not think about writing code in terms of the characters
+they will have to type into the computer. Programmers think about writing code
+in terms of metaphors like &ldquo;function,&rdquo; &ldquo;http request,&rdquo; &ldquo;database connection,&rdquo;
+and &ldquo;hash table.&rdquo; There is a translation process that happens in the
+programmer&rsquo;s head when they sit down to the keyboard that turns those terms into
+the right characters.</p>
+
+<p>Instead of doing that translation process in my head, I want the computer to do
+it for me. I don&rsquo;t want to use my typing to tell the computer, one at a time,
+the individual characters to put on screen. I want to use my typing to tell the
+computer which metaphor I want to insert into this file. The computer should
+have the characters for that metaphor on disk.</p>
+
+<p>It takes on average many fewer characters to select from a set of metaphors than
+it does to type out that metaphor. The computer can infer from the file
+extension what language is being used, so we don&rsquo;t need to select from the list
+of metaphors in every language, just the language we&rsquo;re working with. That
+massively reduces the set of metaphors and makes the number of bits necessary to
+select an individual one manageable.</p>
+
+<p>What does this selection process look like? There should be some key chord that
+brings up the menu of available metaphors, and typing part of the metaphor
+should filter the menu by fuzzy search. Commonly used metaphors can be bound to
+their own key chords.</p>
+
+<p>In this way you can select any code pattern in less than ten keystrokes.</p>
+
+<h2 id="actions-on-the-filesystem">Actions on the Filesystem</h2>
+
+<p>In my experience, the common actions taken on the filesystem in the process of
+building software are creating files, deleting files, moving files, searching
+for files, and searching for things in files. The editor should provide the
+ability to do all these things with as few keystrokes as possible, since they
+happen frequently.  And since the need for any one of these actions is most
+likely to come up in the process of writing code in the editor, the editor
+should support these operations so you don&rsquo;t have to context switch to another
+application.</p>
+
+<p>To support the write actions &ndash; create, move, delete &ndash; the ideal interface
+might be an in-editor file browser operated by the keyboard. Bring up the file
+browser with a short two- or three-character key chord. Navigate within a
+directory with <code>j</code> and <code>k</code>. Navigate between directories with <code>J</code> and <code>K</code>.
+Delete files with <code>d</code> or <code>x</code>, followed by a confirmation prompt to prevent data
+loss from accidental key presses. Mark files for moving with <code>m</code> or <code>r</code> (for
+&ldquo;rename&rdquo;) and then navigate to the new location in the browser and hit <code>m</code> or
+<code>r</code> again to carry out the move. Create a new file in the current directory with
+<code>o</code> (for &ldquo;open&rdquo;).</p>
+
+<p>Searching for files should work something like this: a short key chord brings up
+the search window. Typing into the search bar filters a list of files in the
+project by fuzzy match on their file path. Flags can be passed to the search
+string which further filter on things like file type and directory; these flags
+can be made to be inclusive or exclusive. Once the desired file is in view,
+navigate to it via <code>Ctrl-j</code> and <code>Ctrl-k</code> and hit enter to open it.</p>
+
+<p>Searching for strings in files should work much the same way. Instead of fuzzy
+matching on the file path, the search string should fuzzy match on lines in the
+file, using a tool like ag or ripgrep.</p>
+
+<h2 id="actions-on-the-editor">Actions on the Editor</h2>
+
+<p>The editor application should itself be malleable. It should be able to split
+into an arbitrarily nested grid of panes, each showing the contents of a
+different file or process. Splitting the currently focused pane vertically or
+horizontally should be possible with a short key chord, since it&rsquo;s something
+that happens frequently.</p>
+
+<p>Switching panes should also be possible in two or three keystrokes. Binding
+left, right, up, and down pane navigation to <code>Ctrl-h</code>, <code>Ctrl-l</code>, <code>Ctrl-k</code>,
+<code>Ctrl-j</code>, respectively, works well if you have the Control key mapped somewhere
+convenient like Caps Lock.</p>
+
+<p>Closing the focused pane should be possible in two or three keys.</p>
+
+<h2 id="future-work">Future Work</h2>
+
+<p>The exploration above is not comprehensive. I didn&rsquo;t cover how source control or
+linting fits into this theory. There are almost certainly other things I haven&rsquo;t
+thought about that should be part of this line of study. I may write about those
+things in future essays.</p>
+
+<p>The area I&rsquo;m most interested in at the moment is improving how code metaphors
+are typed into files. That is where I see the biggest potential gains in
+productivity. The next project I do to build on this essay will probably be a
+collection of YASnippet snippets that let you write JavaScript faster, since I&rsquo;m
+writing a lot of JavaScript for other work/projects.</p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+
+        <a href="https://matthewroll.com/2020/08/26/building-emacs-nativecomp.html" class="u-url"><time class="dt-published" datetime="2020-08-26 20:06:00 -0800">Aug 26, 2020</time></a>
+
+        <div class="e-content">
+         	<p>Building emacs native-comp is really difficult right now. Running into problems even w/ the help of <a href="https://github.com/jimeh/build-emacs-for-macos">build-emacs-for-macos</a>. Can&rsquo;t wait until I get it working, either w/ this repo or when <code>feature/native-comp</code> gets merged.</p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+			<h1><a href="https://matthewroll.com/2020/08/22/vachriscationmas-noun-a.html">Vachristcationmas</a></h1>
+		
+
+        <a href="https://matthewroll.com/2020/08/22/vachriscationmas-noun-a.html" class="u-url"><time class="dt-published" datetime="2020-08-22 21:28:00 -0800">Aug 22, 2020</time></a>
+
+        <div class="e-content">
+         	
+
+<h2 id="staycation">#staycation</h2>
+
+<p>vachriscationmas (noun) - A vacation where you also receive presents. (It counts if you bought the presents for yourself.)</p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+
+        <a href="https://matthewroll.com/2020/08/16/life-is-short.html" class="u-url"><time class="dt-published" datetime="2020-08-15 23:45:54 -0800">Aug 15, 2020</time></a>
+
+        <div class="e-content">
+         	<p>Life is short; I didn&rsquo;t write back.</p>
+
+<p>&ndash; Rebecca Solnit</p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+
+        <a href="https://matthewroll.com/2020/08/15/new-blog-post.html" class="u-url"><time class="dt-published" datetime="2020-08-15 12:58:57 -0800">Aug 15, 2020</time></a>
+
+        <div class="e-content">
+         	<p>New blog post up at <a href="http://blog.staqjs.com/#billing-2020-08-15">blog.staqjs.com</a> about how to set up subscription billing with Stripe&rsquo;s new Customer Portal and Firebase functions.</p>
+
+<p>Posting here is basically just announcing something to myself, but you know, something something <span style="font-size: 12px;">backlinks</span> yada yada &hellip;</p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+
+        <a href="https://matthewroll.com/2020/08/10/today-i-launched.html" class="u-url"><time class="dt-published" datetime="2020-08-09 23:06:00 -0800">Aug 9, 2020</time></a>
+
+        <div class="e-content">
+         	<p>Today I launched <a href="http://blog.staqjs.com">blog.staqjs.com</a>.</p>
+
+<p>Not that anyone reads this blog and will see this post and go there and find out about this new project I’m really excited about. I just figured I should post about it here in principal.</p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+
+        <a href="https://matthewroll.com/2020/08/08/coding-became-like.html" class="u-url"><time class="dt-published" datetime="2020-08-08 12:29:33 -0800">Aug 8, 2020</time></a>
+
+        <div class="e-content">
+         	<p>Coding became like tweeting in more ways than one.</p>
+
+<p>— Nadia Eghbal, <em>Working in Public: The Making and Maintenance of Open Source Software</em></p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+			<h1><a href="https://matthewroll.com/2020/08/04/writing-javascript-in.html">Writing Javascript in Emacs Circa 2020</a></h1>
+		
+
+        <a href="https://matthewroll.com/2020/08/04/writing-javascript-in.html" class="u-url"><time class="dt-published" datetime="2020-08-04 22:26:00 -0800">Aug 4, 2020</time></a>
+
+        <div class="e-content">
+         	
+
+<p>After quite some time, I finally have a configuration that does what I need for
+writing Javascript in Emacs. Things I have working:</p>
+
+<ul>
+<li>Understands JSX</li>
+<li>Realtime in-buffer linting with ESLint</li>
+<li>Reformat on save with Prettier</li>
+<li>Autocompletion with lsp-mode and a Javascript language server</li>
+<li>Boilerplate generation with YASnippet</li>
+</ul>
+
+<p>This configuration works today in Doom Emacs. I&rsquo;m not making any guarantees
+about how long that will last.</p>
+
+<h3 id="software-dependencies">Software dependencies:</h3>
+
+<ul>
+<li><a href="https://github.com/sourcegraph/javascript-typescript-langserver">Javascript Language Server</a></li>
+<li><a href="https://prettier.io/">Prettier</a></li>
+<li><a href="https://eslint.org/">ESLint</a></li>
+</ul>
+
+<h3 id="doom-setup">Doom Setup</h3>
+
+<p>In your <code>init.el</code>, uncomment <code>snippets</code>, <code>syntax</code>, <code>lsp</code>, <code>javascript</code>, and <code>web</code>. Update <code>javascript</code> to be <code>(javascript +lsp)</code>.</p>
+
+<p>Add the following to <code>config.el</code>.</p>
+
+<pre>
+;; config.el
+
+(require 'company)
+(require 'flycheck)
+(require 'web-mode)
+
+;; Company Configuration
+(setq company-idle-delay 0.2
+      company-minimum-prefix-length 1)
+
+;; Add yasnippet support for all company backends
+;; [github.com/syl20bnr/...](https://github.com/syl20bnr/spacemacs/pull/179)
+(defvar company-mode/enable-yas t
+  "Enable yasnippet for all backends.")
+
+(defun company-mode/backend-with-yas (backend)
+  (if (or (not company-mode/enable-yas) (and (listp backend) (member 'company-yasnippet backend)))
+      backend
+    (append (if (consp backend) backend (list backend))
+            '(:with company-yasnippet))))
+
+(setq company-backends (mapcar #'company-mode/backend-with-yas company-backends))
+(setq company-tooltip-align-annotations t)
+;; -----------------------
+
+;; YASnippet Configuration
+(yas-global-mode 1)
+(use-package! doom-snippets
+  :after yasnippet)
+;; -----------------------
+
+;; Web Mode Configuration
+(add-to-list 'auto-mode-alist '("\\.jsx\\'" . web-mode))
+(setq web-mode-content-types-alist '(("jsx" . "\\.js[x]?\\'")))
+
+(defun setup-tide-mode ()
+  (interactive)
+  (tide-setup)
+  (flycheck-mode +1)
+  (setq flycheck-check-syntax-automatically '(save mode-enabled))
+  (eldoc-mode +1)
+  (tide-hl-identifier-mode +1)
+  (company-mode +1))
+
+(defun my-web-mode-hook ()
+  "Hooks for Web mode."
+  (setq web-mode-markup-indent-offset 2)
+  (setq web-mode-code-indent-offset 2)
+  (setq web-mode-css-indent-offset 2)
+  (when (string-equal "jsx" (file-name-extension buffer-file-name))
+    (setup-tide-mode))
+  )
+
+(defun web-mode-init-prettier-hook ()
+  (setq web-mode-markup-indent-offset 2)
+  (setq web-mode-code-indent-offset 2)
+  (setq web-mode-css-indent-offset 2)
+  (add-node-modules-path)
+  (prettier-js-mode))
+
+(add-hook 'web-mode-hook  'my-web-mode-hook)
+(add-hook 'web-mode-hook  'web-mode-init-prettier-hook)
+;; -----------------------
+
+;; Flycheck Configuration
+(setq-default flycheck-disabled-checkers
+              (append flycheck-disabled-checkers
+                      '(javascript-jshint json-jsonlist)))
+;; Enable eslint checker for web-mode
+(flycheck-add-mode 'javascript-eslint 'web-mode)
+(flycheck-add-mode 'javascript-eslint 'js2-mode)
+
+;; Enable flycheck globally
+(add-hook 'after-init-hook #'global-flycheck-mode)
+(add-hook 'flycheck-mode-hook 'add-node-modules-path)
+;; -----------------------
+
+;; JS2 Mode Configuration
+(defun js2-mode-init-prettier-hook ()
+  (add-node-modules-path)
+  (prettier-js-mode))
+
+(add-to-list 'js2-mode-hook 'flycheck-mode)
+(add-hook 'js2-mode-hook 'js2-mode-init-prettier-hook)
+;; -----------------------
+</pre>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+
+        <a href="https://matthewroll.com/2020/08/02/just-started-reading.html" class="u-url"><time class="dt-published" datetime="2020-08-02 21:04:03 -0800">Aug 2, 2020</time></a>
+
+        <div class="e-content">
+         	<p>Just started reading <em>Children of the Mind</em>, almost 10 years after finishing <em>Xenocide</em>. Felt necessary to post this comic.</p>
+
+<p>There was a distinct feeling that I got from reading <em>Ender&rsquo;s Game</em>, and the same feeling but even more so from <em>Speaker for the Dead</em>. A feeling I only get from the very best science fiction. And so <em>Xenocide</em> caught me off guard; it was just off. A swing and a miss. Or maybe that part of the story just wasn&rsquo;t as interesting and still needed to be told. I don&rsquo;t know.</p>
+
+<p>And so it was pretty incredible to find this comic, because it meant someone else had that same combination of feelings about those same books.</p>
+
+<p>Credit to Randall Munroe at <a href="https://xkcd.com/304/">xkcd.com</a></p>
+
+<p><img src="uploads/2020/6f3c791a12.jpg" width="204" height="600" alt="" /></p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+			<h1><a href="https://matthewroll.com/2020/07/31/access-gcp-secrets.html">Access GCP Secrets from Firebase Function</a></h1>
+		
+
+        <a href="https://matthewroll.com/2020/07/31/access-gcp-secrets.html" class="u-url"><time class="dt-published" datetime="2020-07-31 12:30:26 -0800">Jul 31, 2020</time></a>
+
+        <div class="e-content">
+         	<p>The documentation for Google Cloud&rsquo;s <a href="https://cloud.google.com/secret-manager/docs/reference/libraries">Secret Manager</a> leaves out a key piece of information, which is what permissions do you need to set in order to run this code in a Firebase function?</p>
+
+<p>The error you&rsquo;ll run into before setting up the permissions is:</p>
+
+<pre>
+Permission 'secretmanager.versions.access' denied for resource &lt;resource-name> (or it may not exist)
+</pre>
+
+<p>And the way to fix it is by adding the role <strong>Secret Manager Secret Accessor</strong> to the service account of the name <strong>&lt;project-id&gt;<a href="http://appspot.gserviceaccount.com">@appspot.gserviceaccount.com</a></strong></p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+
+        <a href="https://matthewroll.com/2020/07/30/found-out-an.html" class="u-url"><time class="dt-published" datetime="2020-07-30 18:22:00 -0800">Jul 30, 2020</time></a>
+
+        <div class="e-content">
+         	<p>Found out an amazing thing today. Sometimes your <a href="https://github.com/bbatsov/projectile">projectile</a> cache will get polluted with files that don&rsquo;t exist anymore. This has been annoying me for weeks! But luckily a little digging turned up a solution. Clear the cache with <code>projectile-invalidate-cache</code>, which probably has a convenient binding if you&rsquo;re using a package like <a href="https://github.com/hlissner/doom-emacs">Doom</a> or <a href="https://www.spacemacs.org/">Spacemacs</a>.</p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+
+        <a href="https://matthewroll.com/2020/07/27/i-often-have.html" class="u-url"><time class="dt-published" datetime="2020-07-27 17:38:07 -0800">Jul 27, 2020</time></a>
+
+        <div class="e-content">
+         	<p>I often have the urge to hack on something when I’m away from my laptop. And so I’ve been trying to come up with an interface that would enable a great software development experience for mobile phones.</p>
+
+<p>But I just realized the solution isn’t to fit a dev environment into a tiny screen. The solution is to figure out how to bring your big screen everywhere. And so I find myself, all of a sudden, <em>extremely</em> excited for proper augmented reality technology. Can’t wait for a lightweight pair of glasses powered by the processor in my phone that I can use to access a cloud hosted dev environment.</p>
+
+<p>That will be magic.</p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+			<h1><a href="https://matthewroll.com/2020/07/11/turkish-coffee.html">Turkish Coffee</a></h1>
+		
+
+        <a href="https://matthewroll.com/2020/07/11/turkish-coffee.html" class="u-url"><time class="dt-published" datetime="2020-07-11 15:56:49 -0800">Jul 11, 2020</time></a>
+
+        <div class="e-content">
+         	
+
+<p>Found a pretty great new coffee recipe online today. I sure do like the standard, black drip coffee that is my regular brew, but sometimes it&rsquo;s Saturday afternoon and I want something a little more smooth, a little more sweet.</p>
+
+<p>This recipe calls for finely ground Arabic coffee, which I don&rsquo;t have. But I do have finely ground Indian coffee, and I figured that would be good enough. Narasu&rsquo;s Udhayam.</p>
+
+<p>I would link to the recipe where I found it, but I don&rsquo;t want to generate SEO for shitty recipe sites that take 30 seconds to load because they&rsquo;re busy running javascript to shove ads in your face. So instead of that, I&rsquo;m going to reproduce the recipe here.</p>
+
+<h2 id="ingredients">Ingredients</h2>
+
+<ul>
+<li>1 cup cold water</li>
+<li>1 tablespoon finely ground coffee</li>
+<li>4-6 crushed green cardamom</li>
+<li>2 tsp. sugar</li>
+</ul>
+
+<h2 id="recipe">Recipe</h2>
+
+<ol>
+<li>Combine water and sugar in a small saucepan and bring to boil.</li>
+<li>Once boiling, remove saucepan from the heat and add coffee and cardamom.</li>
+<li>Place back on the heat and bring to a rolling boil. Let it boil for 2-3 minutes.</li>
+<li>Remove from heat and let cool for 1-2 minutes.</li>
+<li>Pour into a mug through a filter.</li>
+</ol>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+			<h1><a href="https://matthewroll.com/2020/07/04/doom-emacs.html">Doom Emacs</a></h1>
+		
+
+        <a href="https://matthewroll.com/2020/07/04/doom-emacs.html" class="u-url"><time class="dt-published" datetime="2020-07-04 09:27:00 -0800">Jul 4, 2020</time></a>
+
+        <div class="e-content">
+         	<p>I&rsquo;m sorry to say I doubted Emacs. I thought that by design it was too slow, and I would have to look elsewhere for the snappiness I desire.</p>
+
+<p>But the slowness I was experiencing may have just been idiosyncratic to Spacemacs and the bloated config I had accumulated. I decided to give <a href="https://github.com/hlissner/doom-emacs">Doom Emacs</a> a try this morning, and initial results are pretty incredible.</p>
+
+<p>The startup is blazing fast. I like the default home screen more than the Spacemacs one. Everything is really snappy. The keybindings are mostly what I&rsquo;m used to, so I&rsquo;m already reasonably comfortable navigating files and buffers. I&rsquo;ll add configuration to get myself the rest of the way.</p>
+
+<p>This is exciting! It gives me renewed hope and inspiration for building my ideal writing and programming tool.</p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+			<h1><a href="https://matthewroll.com/2020/06/26/long-live-dotfiles.html">Long Live Dotfiles</a></h1>
+		
+
+        <a href="https://matthewroll.com/2020/06/26/long-live-dotfiles.html" class="u-url"><time class="dt-published" datetime="2020-06-26 20:17:00 -0800">Jun 26, 2020</time></a>
+
+        <div class="e-content">
+         	<p>I think the existence of dotfiles is the most unexpected part of the *nix tooling ecosystem. The way people are usually exposed to advanced tools like Emacs, Vim, Mutt, Irssi, etc., is through the tool&rsquo;s user interface. The part that looks super nerdy and puts a bunch of scrolling lines up on the screen and maybe even splits into multiple panes of arcane-looking computer language.</p>
+
+<p>And so it&rsquo;s unthinkable, knowing only what the user interface looks like, that the way to configure that tool is through anything other than some equally unaccessible interface. One which requires years of study and possibly even magical powers to begin to harness.</p>
+
+<p>It just seems weird when you learn that the actual way these tools are configured is with simple text files where each configuration option can typically be expressed on a single line, assigning a value to a variable. For example, this representative line from my <code>.offlineimaprc</code>:</p>
+
+<pre><code>sync_deletes = yes
+</code></pre>
+
+<p>This line, perhaps not unexpectedly, tells <code>offlineimap</code> to delete emails on the server which were deleted locally.</p>
+
+<p>Ok, so what&rsquo;s the big deal with dotfiles?</p>
+
+<p>I don&rsquo;t know. I just thought it&rsquo;s interesting there can be such a simple interface to configure such complicated programs.</p>
+
+<p>But in fact the interface is not simple enough. It&rsquo;s not discoverable enough. It&rsquo;s not abstract enough.</p>
+
+<p>Dotfiles have worked fine for me so far. I certainly don&rsquo;t regret the hours I&rsquo;ve spent ricing my Arch install or searching random blogs for the best s-expressions to copy into my <code>.spacemacs</code>.</p>
+
+<p>But all those hours have made it clear to me there&rsquo;s an important layer to be built on top of dotfiles. Something that will leverage the power of dotfiles, but take them out of the picture for the vast majority of user. This layer will make *nix tools accessible to more people. People who don&rsquo;t care to wade deep into the internals and implementation details of tools, but who do care about getting work done and who deserve to be able to use the most powerful tools available.</p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+			<h1><a href="https://matthewroll.com/2020/06/26/after-emacs.html">After Emacs</a></h1>
+		
+
+        <a href="https://matthewroll.com/2020/06/26/after-emacs.html" class="u-url"><time class="dt-published" datetime="2020-06-26 19:03:00 -0800">Jun 26, 2020</time></a>
+
+        <div class="e-content">
+         	<p>Emacs is clearly the best text and code editing tool on the market, but it&rsquo;s not perfect. It&rsquo;s slower than I&rsquo;d like - the UI doesn&rsquo;t update immediately with every keystroke and I often find myself waiting for the helm buffer to update before I hit the next keystroke.</p>
+
+<p>Configuring emacs is non-trivial. Too low-level. You have to know too much about package variable names and functions.</p>
+
+<p>Emacs doesn&rsquo;t look as good as more recent editors like GitHub&rsquo;s Atom.</p>
+
+<p>And it doesn&rsquo;t come with good enough productivity packages. You have to go out and discover those by combing through blog posts and random peoples&rsquo; GitHub repos.</p>
+
+<p>Emacs might be the state of the art, but it&rsquo;s not the ideal.</p>
+
+<p>So, what is after Emacs?</p>
+
+<p>In a sentence: a version of Emacs that is blazing fast, looks great, is configurable via an intuitive graphical interface, and comes setup with amazing productivity apps.</p>
+
+<p>One way of creating this tool is to start with a bare-bones Emacs and add on packages and write better interfaces. But I&rsquo;m not sure you can get past the performance limitations of Emacs Lisp. My understanding is that Sublime Text 2 is the popular IDE with the best performance. Which makes sense, it being written almost entirely in C++.</p>
+
+<p>Atom is an Electron app, which means Javascript. But I don&rsquo;t have enough experience using it, and have not heard enough on the subject, to be able to say how fast it is. (Ok a quick google search reveals a complaint about Atom performance: <a href="https://dev.to/ben/why-i-switched-from-atom-to-visual-studio-code">dev.to/ben/why-i&hellip;</a>)</p>
+
+<p>What about VSCode? Could that be the foundation for a post-Emacs editor? How configurable is it and how fast is it? Apparently about the same as Atom, both being significantly worse than Sublime. <a href="https://blog.xinhong.me/post/sublime-text-vs-vscode-vs-atom-performance-dec-2016/">blog.xinhong.me/post/subl&hellip;</a></p>
+
+<p>Ok, fine. How about starting with Sublime and building org-mode, projectile, helm, magit, etc. on top of it? The reason I hadn&rsquo;t considered it before the other two editors is my impression is Sublime is not as configurable. But let&rsquo;s see. To Google!</p>
+
+<p>[Later that day]</p>
+
+<p>I installed Sublime Text and tried to write AngularJS code for a couple hours this afternoon. It didn&rsquo;t go that well. The default vim bindings and tab/pane navigation aren&rsquo;t good enough. I think Sublime is built primarily for people who don&rsquo;t mind using the mouse frequently. I hate the mouse. (There&rsquo;s a really funny thread from the ratpoison window manager mailing list that I&rsquo;d love to point to here as a tangent, but I can&rsquo;t find it.)</p>
+
+<p>But that doesn&rsquo;t mean Sublime can&rsquo;t work. It just means I need to spend some time configuring before I can really make it hum.</p>
+
+<p>Which I might do at some point. But not tonight.</p>
+
+<p>I mean, probably not tonight. It&rsquo;s only 7:30 which means I have at least five more hours to hack on stuff. But I&rsquo;m not sure I&rsquo;ll decide to spend the time on that.</p>
+
+<p>Let&rsquo;s explore another route. What if this tool is something that you have to build from scratch. Like open up a blank file and import some native graphics library. This just seems monumentally hard. Like it would take months to get something even reasonable up and running. Then again, I barely have any experience in native apps. Maybe it&rsquo;s not so hard?</p>
+
+<p>Maybe it&rsquo;s just like web apps? Those are pretty easy.</p>
+
+<p>The question then becomes: is it worth it? Do I want this tool enough to start spending lots of free time working on it? At the moment, I don&rsquo;t think so. Emacs is pretty great, and I can likely make some small improvements that will smooth things out.</p>
+
+<p>But eventually&hellip; I think I might write the thing that comes after Emacs.</p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+
+        <a href="https://matthewroll.com/2020/06/19/today-i-discovered.html" class="u-url"><time class="dt-published" datetime="2020-06-18 23:31:00 -0800">Jun 18, 2020</time></a>
+
+        <div class="e-content">
+         	<p>Today I discovered an amazingly simple piece of code for setting up a writing mode in Emacs. This snippet is courtesy of <a href="https://kodfabrik.com/journal/ia-writer-mode-for-emacs">Azer Koçulu</a>. I&rsquo;ve changed the font to <a href="https://edwardtufte.github.io/et-book/">ET Book</a>.</p>
+
+<pre>
+(defun writing-mode ()
+  (interactive)
+  (setq buffer-face-mode-face '(:family "EtBembo" :height 200))
+  (buffer-face-mode)
+  (linum-mode 0)
+  (writeroom-mode 1)
+  (blink-cursor-mode)
+  (visual-line-mode 1)
+  (setq truncate-lines nil)
+  (setq line-spacing 5)
+  (setq global-hl-line-mode nil))
+(add-hook 'markdown-mode-hook 'writing-mode)
+</pre>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+			<h1><a href="https://matthewroll.com/2020/06/19/the-language-of.html">The Language of Editing Computer Programs</a></h1>
+		
+
+        <a href="https://matthewroll.com/2020/06/19/the-language-of.html" class="u-url"><time class="dt-published" datetime="2020-06-18 23:17:00 -0800">Jun 18, 2020</time></a>
+
+        <div class="e-content">
+         	
+
+<p><strong>On the primitive actions used when writing and editing software.</strong></p>
+
+<p>The name of the tool for editing software is &ldquo;text editor.&rdquo; That&rsquo;s because people view programs as text and edit them as text. But people don&rsquo;t think about programs as text. At least I don&rsquo;t. I think about programs – and I don&rsquo;t think I&rsquo;m alone here – as bigger logical pieces like functions and objects and control structures and the files those things live in.</p>
+
+<p>This seems like a mismatch. If people reason about programs as logical blocks, shouldn&rsquo;t the act of programming be about manipulating those logical blocks? I guess it is, but not directly. The act of programming as it&rsquo;s typically practiced is about manipulating, one at a time, the characters that make up those logical blocks. I feel like that&rsquo;s not the best way of doing it.</p>
+
+<p>There are various reasons I think formal higher education in Computer Science is lacking when it comes to teaching the skills that will help you succeed as an industry programmer, and one of them is the complete disregard for tools of the craft. In your introductory courses, you are likely to be exposed to vi and emacs because the teacher mentions their prevalence and historical importance. What you will not be exposed to is any reasonable discussion of their relative merits and how to use them well. I view this as a crime on par with significant monetary theft, as by not giving students this information, the institutions are effectively robbing said students of at least tens of thousands of dollars of future productivity.</p>
+
+<p>I think the status quo of writing code by editing text character by character is due for reform. There are enough patterns in every high level language used in industry that code editors ought to do most of the typing, leaving the programmer to think on how the abstractions in the context at hand fit together.</p>
+
+<p>The good news is that most if not all widely used code editors are extensible and can be programmed to do crazy things, like write code for you. My current editor of choice is Emacs, and so I&rsquo;ll be using that to explore how the editing-software-one-character-at-a-time status quo might be overthrown. But the concepts we come up with during that exploration will be applicable for any
+editor that is scriptable.</p>
+
+<h2 id="basic-concepts-in-code-writing">Basic Concepts in Code Writing</h2>
+
+<p>We can start by looking at one of the most fundamental building blocks of computer programs: the function. Every language more powerful than assembly has the function. It&rsquo;s a construct with a few defining properties:</p>
+
+<ul>
+<li>Takes arguments</li>
+<li>Executes a body</li>
+<li>Returns a value</li>
+<li>Might have side effects</li>
+</ul>
+
+<p>There are other things you can say about functions, depending on the language in question, but we actually don&rsquo;t care about what a function does. We care about what it looks like when you write it down.</p>
+
+<p>Since we are using Emacs as our editor, we will use Emacs Lisp (elisp) as our language. A function in Emacs Lisp looks like this</p>
+
+<pre>
+(defun foo (n)
+  (+ n 1))
+</pre>
+
+<p>To write this function, normally you would start out by typing a parentheses followed by a &ldquo;d&rdquo; followed by an &ldquo;e&rdquo; and so on. But we are trying to move away from the character-by-character form of editing toward something that deals with the logical building blocks of the program, so let&rsquo;s look at the logical building blocks of this function and see if we can do any better.</p>
+
+<pre>
+(defun <name> (<args>)
+  <body>
+</pre>
+
+<p>There is some boilerplate like the parentheses and the string &ldquo;defun&rdquo;, and then you have to fill in the name, the arguments, and the body. The boilerplate never changes, but the name, arguments, and body will be different for every function. Hmm. The name, arguments, and body almost sound like the arguments to a function that writes an elisp function for you. What would that look like?</p>
+
+<pre>
+(defun write-function (name args body)
+  (let ((func-template "(defun %s (%s) %s)"))
+    (format t func-template name args body)))
+
+> (write-function "foo" "bar baz" "(+ bar baz)")
+(defun foo (bar baz)
+  (+ bar baz))
+</pre>
+
+<p>So now, instead of thinking of typing what we think of as the &ldquo;function characters&rdquo; when we want to write a function, we can think of calling the &ldquo;function-writing function.&rdquo; Writing a function goes from a bunch of little actions that are logically unrelated to the concept of &ldquo;function,&rdquo; to a single action that in our head sounds like &ldquo;write a function.&rdquo;</p>
+
+<p>How do we incorporate this into the editing workflow? Well, the keyboard is still the highest bandwidth input device we have, so we should use that. But we don&rsquo;t have to use it as something that takes individual keystrokes and maps them 1:1 onto characters onscreen. We can use keystrokes as signals for the computer to carry out more complex actions. Like calling <code>write-function</code>.</p>
+
+<p>We want write-function to be available when writing elisp code, so we add the following to our Emacs config file:</p>
+
+<pre>
+(defun interactive-write-function (name args body)
+  (interactive "sName: \nsArgs: \nsBody: \n)
+  (insert (write-function name args body)))
+
+(add-hook 'emacs-lisp-mode-hook
+  (define-key emacs-lisp-mode-map (kbd "SPC i f") 'write-function))
+</pre>
+
+<p>That tells Emacs &ldquo;Whenever we are editing elisp code, make it so pressing <code>SPC i f</code> calls <code>interactive-write-function</code>. Which is a version of write function that prompts you for the name, args, and body arguments.</p>
+
+<h2 id="yasnippet">YASnippet</h2>
+
+<p>The explanation of write-function above should be helpful to illustrate the concept of having the editor write code for you, but it&rsquo;s not like groundbreaking stuff. This idea has been around for a while and there is even a sophisticated Emacs plugin called YASnippet (Yet Another Snippet Extension) that supports a framework for creating and using little programs like write-function to write code for you. The mechanism for changing the practice of writing code exists. The conventions and knowledge for how to do it do not.</p>
+
+<p>No one has thought through what snippets to make and what keys to bind them to for maximum efficiency. But maybe someone should do that.</p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+			<h1><a href="https://matthewroll.com/2020/06/18/there-is-not.html">There Is Not A Good Enough Rapid Prototyping Tool for Web Apps</a></h1>
+		
+
+        <a href="https://matthewroll.com/2020/06/18/there-is-not.html" class="u-url"><time class="dt-published" datetime="2020-06-18 22:51:50 -0800">Jun 18, 2020</time></a>
+
+        <div class="e-content">
+         	<p>It should not take more than a couple hours to put together a prototype for a new app idea. Even if that idea involves an external integration, users, payments, and needs to look good. That couple hours should include deploying it on the web.</p>
+
+<p>The problem is that for a prototype to look good, have a custom integrations, users, and payments, you need to write a bunch of custom code. It&rsquo;s not complicated code. It&rsquo;s basically boilerplate code. There are libraries and frameworks and free services that make this code easy to write, but you still have to write it and that takes time.</p>
+
+<p>Building a prototype should be more like plugging legos together. Or more like filling out a config. With some bits of custom code when you need it because fine.</p>
+
+<p>Check off the &lsquo;Users&rsquo; box and fill out a list of columns they should have. Check off  &lsquo;Payments&rsquo; and maybe select what type of payments you need: subscription, one time charges - and then have the necessary views and server routes/handlers generated for you.</p>
+
+<p>Honestly just doing this for users and frontend signin/up flow would be a huge win.</p>
+
+<p>And maybe you could charge like $10/prototype, since this tool would be generating code that you could download.</p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+
+        <a href="https://matthewroll.com/2020/05/12/the-paintball-episodes.html" class="u-url"><time class="dt-published" datetime="2020-05-12 13:16:01 -0800">May 12, 2020</time></a>
+
+        <div class="e-content">
+         	<p>The paintball episodes of <em>Community</em> are underrated treasures of 21st century pop culture.</p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+
+        <a href="https://matthewroll.com/2020/05/09/it-is-not.html" class="u-url"><time class="dt-published" datetime="2020-05-09 11:49:50 -0800">May 9, 2020</time></a>
+
+        <div class="e-content">
+         	<p><em>It is not difficult to wield a sword in one hand; the Way to learn this is to train with two long swords, one in each hand. It will seem difficult at first, but everything is difficult at first.</em></p>
+
+<p>— Miyamoto Musashi, <em>The Book of Five Rings</em></p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+
+        <a href="https://matthewroll.com/2020/05/01/184014.html" class="u-url"><time class="dt-published" datetime="2020-05-01 17:40:14 -0800">May 1, 2020</time></a>
+
+        <div class="e-content">
+         	<p><img src="uploads/2020/b96394a5fa.jpg" width="600" height="337" alt="" /></p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+
+        <a href="https://matthewroll.com/2020/04/28/how-my-hair.html" class="u-url"><time class="dt-published" datetime="2020-04-28 22:53:50 -0800">Apr 28, 2020</time></a>
+
+        <div class="e-content">
+         	<p><em>How my hair look Mike?</em></p>
+
+<p><em>You look good girl</em></p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+			<h1><a href="https://matthewroll.com/2020/04/23/the-wire.html">The Wire</a></h1>
+		
+
+        <a href="https://matthewroll.com/2020/04/23/the-wire.html" class="u-url"><time class="dt-published" datetime="2020-04-23 16:03:56 -0800">Apr 23, 2020</time></a>
+
+        <div class="e-content">
+         	<p>Finished watching <a href="https://en.wikipedia.org/wiki/The_Wire"><em>The Wire</em></a> today. I watched the first season in my senior year of high school, and tried at that point to continue through the second season. I think I got bored so I stopped at like episode two or something. Then five years later I picked it back up, starting at the beginning of season two. I made it all the way through that season and like one episode into season three. But I dropped it again, I think because I found it boring.</p>
+<p>Honestly I’m ashamed of myself. <em>The Wire</em> is no doubt the greatest television show of all time. The fact I couldn’t see that the first two times around, well, I’ll chalk it up to the ignorance of youth. But I’m not happy about it.</p>
+<p><em>The Wire</em> is the only good literature on television. And unfortunately it’s not on television anymore.</p>
+<p>For sure there is a lot of good content coming out right now. <em>Killing Eve</em> is good, <em>Better Call Saul</em> is good, and I’m watching this show on Amazon Prime called <em>The Boys</em> which is surprisingly good. But nothing I’m seeing is such a blatant, accurate, entertaining commentary on <em>extremely important issues</em>.</p>
+<p>And I think if someone did make a show like that right now, it would get a lot of good attention.</p>
+<p>Anyway.</p>
+<p><em>The Wire</em> is the television version of <a href="https://slatestarcodex.com/2014/07/30/meditations-on-moloch/">Meditations on Moloch</a>. It’s a vivid explanation of how systems with perverse incentives basically end up screwing everyone over. Which is actually super refreshing because it’s not trying to simplify anything. It’s like trying to tell us “These are hard problems! You can’t just tell the police to make more arrests! You can’t just have politicians with good intentions! In order to sort out this mess you are going to have to foster cooperation between several major entities with <em>misaligned incentives</em>. Good luck.”</p>
+<p>When viewed as a warning that our major systems are broken in how they interact with one another, <em>The Wire</em> has a sad and disappointing legacy. The show could have been the spark that brought multipolar trap problems into the mainstream conversation. Instead it’s remembered by a small percentage of people as a great piece of media. An admirable accomplishment for sure but so far short of its potential in my eyes.</p>
+<p>I want to end this on a happy note. And so I’ll say “At least they tried.” I’m so glad <em>The Wire</em> exists. For many it is an amazing piece of entertainment. For me it is that, but more importantly it is a study of the core failure mode of the institutions that we’ve entrusted with the power to protect and strengthen us as a people. I think it’s important we praise and keep trying to create art like that.</p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+
+        <a href="https://matthewroll.com/2020/04/19/i-havent-been.html" class="u-url"><time class="dt-published" datetime="2020-04-19 16:39:00 -0800">Apr 19, 2020</time></a>
+
+        <div class="e-content">
+         	<p>I haven’t been able to find a converter that fits into this Faber Castell, so I’ve been dipping it in order to write. Working fine so far, but I feel like I’m not getting the full experience. 🖋️</p>
+
+<p><img src="uploads/2020/3dbe409ff9.jpg" width="600" height="450" alt="" /></p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+
+        <a href="https://matthewroll.com/2020/04/19/didnt-go-for.html" class="u-url"><time class="dt-published" datetime="2020-04-19 10:01:00 -0800">Apr 19, 2020</time></a>
+
+        <div class="e-content">
+         	<p>Didn’t go for a walk yesterday. Feeling a little stuffy in the apartment this morning, so I’m trying to get a little fresh air with my Cheerios and coffee.</p>
+
+<p><img src="uploads/2020/c566a7e7a3.jpg" width="450" height="600" alt="" /></p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+
+        <a href="https://matthewroll.com/2020/04/18/teamaking-operation-strong.html" class="u-url"><time class="dt-published" datetime="2020-04-18 19:08:31 -0800">Apr 18, 2020</time></a>
+
+        <div class="e-content">
+         	<p>Tea-making operation. Strong chai fills the apartment with a warm, heavy, soothing smell
+<img src="https://matthewroll.com/uploads/2020/4098f1f92a.jpg" alt="2DF886DC-97A3-4C70-9957-45E78E4F5B66.jpg" /></p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+
+        <a href="https://matthewroll.com/2020/04/10/turns-out-fantastic.html" class="u-url"><time class="dt-published" datetime="2020-04-10 18:31:13 -0800">Apr 10, 2020</time></a>
+
+        <div class="e-content">
+         	<p>Turns out, Fantastic Haze actually is fantastic</p>
+
+<p><img src="https://mroll.micro.blog/uploads/2020/7ab2af52ce.jpg" alt="BD9DC218-6BE6-491F-9B99-1EFBBE9E6DB9.jpg" /></p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+			<h1><a href="https://matthewroll.com/2020/03/21/bindwandle.html">Bindwandle</a></h1>
+		
+
+        <a href="https://matthewroll.com/2020/03/21/bindwandle.html" class="u-url"><time class="dt-published" datetime="2020-03-20 23:28:00 -0800">Mar 20, 2020</time></a>
+
+        <div class="e-content">
+         	<p>Bindwandle shouldered his pack and with one last look behind him started walking away from town and into the forest. It was three hours to the mountain pass by road, but he couldn’t take the road. He knew other ways, the fastest would take at least twice as long. But there was really no choice. Bindwandle knew he had to stay hidden. His absence would be discovered soon and messages would be sent. There would be eyes on the road, waiting for him.</p>
+
+<p>So he sighed as he entered the forest, far from where the road cut an easy path through the trees. He kept going without a second thought, taking care not to step on any twigs or disturb any spiderwebs. Of those telltale signs he left none. After all, he was a professional.</p>
+
+<p>Bindwandle arrived at the entry to the pass long after sunset. The sky over the mountains was a thick layer of clouds, and the torches lighting the entryway had to fight to keep out the heavy darkness.</p>
+
+<p>From where he sat hidden in the trees a few hundred feet from where the road met a strip of barren land between the forest and the mountains, Bindwandle had a clear view of the area around the pass entry. He spotted a small fire and three men sitting around it. They were all visibly armed. Bindwandle assumed these were the ones waiting for him, and that more than likely there was at least one more on patrol. The road was empty and everything was quiet except the crackling of the fire and low voices of the men around it.</p>
+
+<p>Bindwandle needed to know how many adversaries he was dealing with here, otherwise he couldn’t make a move and be sure he was going unnoticed. The whole point was to escape into the mountains undetected and not incur further pursuit.</p>
+
+<p>Closing his eyes, Bindwandle reached into a leather pouch strapped to his waist and pulled out a small red stone. It was sharply cut with eight faces and felt warm in Bindwandle’s hand. Much warmer than the air around it. Summoning up the words to a spell – one memorized long ago in an old underground library – he invoked the spell, yanking power out of the stone for his own use.</p>
+
+<p>When he opened his eyes, it was like the heavy darkness had won. There was nothing but straight black, not even the faint silhouette of trees against the light of the torches by the pass entry. But Bindwandle shifted his gaze towards where he knew the fire was, and saw three glowing silhouettes green against the black of everything else. Noting those, he began a full circle rotation. And sure enough, spotted another glowing shape near the edge of the road. It was urinating.</p>
+
+<p>Bindwandle completed the rotation and saw no more shapes. Then he closed his eyes again and let some of the energy he’d taken flow back into the stone. It was colder in his hand as he slipped it back into the pouch.</p>
+
+<p>Aware of the location of all four would-be assailants, Bindwandle slipped out into the opening between the forest and the mountains. Keeping far enough away from the fire as to be invisible against the jet black backdrop of the rock face, he crossed the gap. He didn’t go to the pass entry. Instead he went to a pile of rocks a ways away. It was a big pile, and there were openings where large slabs lay against each other at angles. He ducked into a medium-sized opening and took a deep breath. <em>Almost there</em>, he thought. Because into the mountains was far enough into The Wilderness as to basically be safe from any entity not from The Wilderness.</p>
+
+<p>And so, Bindwandle summoned some energy and <em>thought</em> a pattern at the rock face in front of him. The rock <em>thought</em> something back and Bindwandle used a bit of energy along with a stored brain pattern to decompose that thought into its unique constituent parts, and thought those parts back at the rock. The tall rectangular section of the rock in front of him seemed to blur slightly, and soften, and Bindwandle stepped into and through it as if it had been a piece of cloud.</p>
+
+<p>He was now in a dark and earthy corridor. Under the mountain. There were two burning torches perched at shoulder height, one on either side of the corridor where he stood. Bindwandle picked one out of its holder and continued walking.</p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+
+        <a href="https://matthewroll.com/2020/03/17/work-from-home.html" class="u-url"><time class="dt-published" datetime="2020-03-17 15:44:40 -0800">Mar 17, 2020</time></a>
+
+        <div class="e-content">
+         	<p>Work from home setup</p>
+
+<p><img src="uploads/2020/45710a46f7.jpg" width="600" height="450" alt="" /></p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+			<h1><a href="https://matthewroll.com/2020/03/14/john-comstock-lays.html">John Comstock Lays Down the Law</a></h1>
+		
+
+        <a href="https://matthewroll.com/2020/03/14/john-comstock-lays.html" class="u-url"><time class="dt-published" datetime="2020-03-14 10:57:00 -0800">Mar 14, 2020</time></a>
+
+        <div class="e-content">
+         	<p><strong>an excerpt from <em>Quicksilver</em> by Neal Stephenson</strong></p>
+
+<p>“Excuse me! Gentlemen! REVEREND WILKINS!”</p>
+
+<p>After several minutes’ confusion, embarrassment, and makeshift stabs at protocol, Wilkins and Comstock ended up sitting across the table from each other with glasses of claret while Hooke and Waterhouse and the deaf servant held up a nearby wall with their arses.</p>
+
+<p>Comstock was pushing sixty. Here on his own country estate, he had no patience with wigs or other Court foppery, and so his silver hair was simply queued, and he was dressed in plain simple riding-and-hunting togs. “In the year of my birth, Jamestown was founded, the pilgrims scurried off to Leyden, and work commenced on the King James version of the Bible. I have lived through London’s diverse riots and panics, plagues and Gunpowder Plots. I have escaped from burning buildings. I was wounded at the Battle  of Newark and made my way, in some discomfort, to safety in Paris. It was not my last battle, on land or at sea. I was there when His Majesty was crowned in exile at Scone, and I was there when he returned in triumph to London. I have killed men. You know all of these things, Dr.Wilkins, and so I mention them, not to boast, but to emphasize that <em>if I were living a solitary life</em> in that large House over yonder, you could set off cannonades, and larger detonations, at all hours of the night, without warning, and for that matter you could make a pile of meat five fathoms high and let it fester away beneath my bedchamber’s window–<em>and none of it would matter to me</em>. But as it is, my house is crowded, just now, with Persons of Quality. Some of them are of <em>royal</em> degree. Many of them are <em>female</em>, and some are of <em>tender years</em>. Two of them are <em>all three</em>.”</p>
+
+<p>“My lord!” Wilkins exclaimed.</p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+			<h1><a href="https://matthewroll.com/2020/03/14/my-current-chai.html">Chai</a></h1>
+		
+
+        <a href="https://matthewroll.com/2020/03/14/my-current-chai.html" class="u-url"><time class="dt-published" datetime="2020-03-14 06:26:00 -0800">Mar 14, 2020</time></a>
+
+        <div class="e-content">
+         	<p>My current chai recipe, straight from India (thanks Raunaq!).</p>
+
+<p>Makes 1 Cup</p>
+
+<ul>
+<li>2 green cardamom</li>
+<li>&frac12; inch ginger</li>
+<li>1 cup water</li>
+<li>&frac14; cup milk</li>
+<li>2 tsp. tea leaves</li>
+</ul>
+
+<p>Add water to saucepan. Crush cardamom and ginger and add to saucepan. Swish some water in the mortar and add to saucepan to get the juices from the ginger.</p>
+
+<p>Bring to a boil and let it boil for two minutes.</p>
+
+<p>After about two minutes, add the tea leaves. Let boil for one minute.</p>
+
+<p>Add milk and bring to boil. Let boil for about 30 seconds. Watch the tea closely as the milk boils. If you turn away even for 30 seconds it&rsquo;s liable to boil over and make a sticky mess on your stove.</p>
+
+<p>Add sugar to taste.</p>
+
+<p>Enjoy with a couple cookies and a good book :)</p>
+
+<p><img src="uploads/2020/a60575a3fc.jpg" width="600" height="450" alt="" /></p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+
+        <a href="https://matthewroll.com/2020/03/01/a-potentially-littleknown.html" class="u-url"><time class="dt-published" datetime="2020-02-29 11:01:00 -0800">Feb 29, 2020</time></a>
+
+        <div class="e-content">
+         	<p>A potentially little-known Emacs command: <code>helm-show-kill-ring</code></p>
+
+<p>Conveniently bound to <code>SPC r y</code> in <a href="https://www.spacemacs.org/">spacemacs</a></p>
+
+<p>Navigate the kill ring with <code>C-j</code> and <code>C-k</code>; insert the current entry with <code>RET</code></p>
+
+<p>While HELM Kill Ring is active, access more documentation with <code>C-c ?</code></p>
+
+<p>⌨️</p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+
+        <a href="https://matthewroll.com/2020/02/23/check-out-a.html" class="u-url"><time class="dt-published" datetime="2020-02-22 23:19:00 -0800">Feb 22, 2020</time></a>
+
+        <div class="e-content">
+         	<p>Check out a file from another branch in spacemacs magit:</p>
+
+<p><code>O f</code></p>
+
+<p>I rarely have to use that key chord, but it saves a  lot of time when I do.</p>
+
+<p>⌨</p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+
+        <a href="https://matthewroll.com/2020/02/22/went-to-a.html" class="u-url"><time class="dt-published" datetime="2020-02-21 23:35:44 -0800">Feb 21, 2020</time></a>
+
+        <div class="e-content">
+         	<p>Went to a vegetable market in a small town in India today. Unlike most outdoor markets in the US, this one happens every day and is where many residents get all their vegetables.</p>
+
+<p>The market is a maze of ad hoc stalls, almost completely sheltered by a network of tarps and sheets held up by posts around each stall. Inside the market feels like it’s own world, cut off from the loud city outside.</p>
+
+<p>🌎</p>
+
+<p><img src="uploads/2020/5a8d4d0fdb.jpg" width="600" height="600" alt="" /><img src="uploads/2020/e369599a07.jpg" width="600" height="600" alt="" /><img src="uploads/2020/a3a2573cbe.jpg" width="600" height="600" alt="" /><img src="uploads/2020/2f9ecbe8a3.jpg" width="600" height="600" alt="" /></p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+
+        <a href="https://matthewroll.com/2020/02/20/was-gifted-delhi.html" class="u-url"><time class="dt-published" datetime="2020-02-20 01:41:06 -0800">Feb 20, 2020</time></a>
+
+        <div class="e-content">
+         	<p>Was gifted <em>Delhi</em> by a new friend. Looking forward to reading it and being able to picture the place, having now spent some time here. 📚</p>
+
+<p><img src="uploads/2020/162ed95874.jpg" width="181" height="188" alt="" /></p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+
+        <a href="https://matthewroll.com/2020/02/20/information-consumption-philosophy.html" class="u-url"><time class="dt-published" datetime="2020-02-19 23:27:00 -0800">Feb 19, 2020</time></a>
+
+        <div class="e-content">
+         	<p><strong>Information Consumption Philosophy</strong></p>
+
+<p>If there is a monetary incentive for someone to get me to look at something, I won’t look at it regularly or predictably.</p>
+
+<p>I think I’m okay to make an exception for something where optimizing for how much I look at the thing causes the thing to be more useful to me (e.g. Google).</p>
+
+        </div>
+      </div>
+    
+      <div class="h-entry">
+		
+
+        <a href="https://matthewroll.com/2020/02/20/there-really-needs.html" class="u-url"><time class="dt-published" datetime="2020-02-19 22:15:25 -0800">Feb 19, 2020</time></a>
+
+        <div class="e-content">
+         	<p>There really needs to be a  great way to program on mobile</p>
+
+        </div>
+      </div>
+    
+
+</div>
+
+
+    
+    
+
+  </body>
+
+</html>
